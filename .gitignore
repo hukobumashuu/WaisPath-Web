@@ -58,3 +58,4 @@ out/
 # WAISPATH specific - sensitive config
 src/config/keys.js
 src/config/keys.ts
+src/app/debug-env

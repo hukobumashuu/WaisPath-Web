@@ -1,5 +1,12 @@
 // scripts/setup-admin.ts
-// Final Fixed - One-time script to set up admin custom claims in Firebase
+// Fixed admin setup script with proper environment loading
+
+// Load environment variables from .env.local
+import { config } from "dotenv";
+import { resolve } from "path";
+
+// Load .env.local file
+config({ path: resolve(process.cwd(), ".env.local") });
 
 import { adminAuth, adminDb } from "../src/lib/firebase/admin";
 import type {
@@ -156,12 +163,11 @@ class AdminSetup {
 // Export for use in setup scripts
 export const adminSetup = new AdminSetup();
 
-// Example usage function - CHANGE THE EMAIL TO YOURS
-export async function runInitialSetup(): Promise<void> {
+// CLI usage with the provided email
+export async function runInitialSetup(email: string): Promise<void> {
   try {
-    // 🚨 REPLACE WITH YOUR ACTUAL EMAIL ADDRESS
     const initialAdmin: AdminSetupConfig = {
-      email: "your-email@gmail.com", // 👈 PUT YOUR EMAIL HERE
+      email: email,
       role: "super_admin",
       permissions: ADMIN_ROLES.super_admin.permissions,
     };
@@ -184,8 +190,8 @@ if (require.main === module) {
         console.error("Usage: npm run setup-admin setup your-email@gmail.com");
         process.exit(1);
       }
-      // Update the email in the initial admin config and run setup
-      runInitialSetup();
+      // Use the provided email
+      runInitialSetup(email);
       break;
 
     case "list":

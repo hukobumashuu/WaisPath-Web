@@ -1,5 +1,5 @@
 // src/lib/auth/firebase-auth.ts
-// Fixed Firebase Authentication with Custom Claims for Admin Access
+// Secure Firebase Authentication with Custom Claims - No Hardcoded Keys
 
 "use client";
 
@@ -8,7 +8,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
-import { auth } from "../firebase/client";
+import { getFirebaseAuth } from "../firebase/client";
 
 // Admin user interface
 export interface AdminUser {
@@ -34,33 +34,66 @@ interface FirebaseCustomClaims {
 class AdminAuthService {
   private currentUser: AdminUser | null = null;
   private authStateListeners: ((user: AdminUser | null) => void)[] = [];
+  private initialized = false;
 
   constructor() {
-    // Listen to auth state changes
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // Get custom claims to verify admin access
-        const tokenResult = await user.getIdTokenResult();
-        const customClaims = tokenResult.claims as FirebaseCustomClaims;
+    // Initialize auth when client is ready
+    if (typeof window !== "undefined") {
+      this.initializeAuth();
+    }
+  }
 
-        this.currentUser = {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          isAdmin: customClaims.admin === true,
-          customClaims: {
-            admin: customClaims.admin,
-            role: customClaims.role,
-            permissions: customClaims.permissions,
-          },
-        };
-      } else {
-        this.currentUser = null;
+  private async initializeAuth() {
+    try {
+      if (this.initialized) return;
+
+      // Wait for Firebase to be ready
+      const auth = await getFirebaseAuth();
+      if (!auth) {
+        console.warn("⚠️ Firebase Auth not available, retrying...");
+        // Retry after a short delay
+        setTimeout(() => this.initializeAuth(), 1000);
+        return;
       }
 
-      // Notify listeners
-      this.authStateListeners.forEach((listener) => listener(this.currentUser));
-    });
+      // Listen to auth state changes
+      onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          try {
+            // Get custom claims to verify admin access
+            const tokenResult = await user.getIdTokenResult();
+            const customClaims = tokenResult.claims as FirebaseCustomClaims;
+
+            this.currentUser = {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName,
+              isAdmin: customClaims.admin === true,
+              customClaims: {
+                admin: customClaims.admin,
+                role: customClaims.role,
+                permissions: customClaims.permissions,
+              },
+            };
+          } catch (error) {
+            console.error("Error getting custom claims:", error);
+            this.currentUser = null;
+          }
+        } else {
+          this.currentUser = null;
+        }
+
+        // Notify listeners
+        this.authStateListeners.forEach((listener) =>
+          listener(this.currentUser)
+        );
+      });
+
+      this.initialized = true;
+      console.log("✅ Admin Auth initialized securely");
+    } catch (error) {
+      console.error("Auth initialization error:", error);
+    }
   }
 
   // Sign in with email and password
@@ -69,6 +102,15 @@ class AdminAuthService {
     password: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      const auth = await getFirebaseAuth();
+      if (!auth) {
+        return {
+          success: false,
+          error:
+            "Firebase Auth not ready. Please refresh the page and try again.",
+        };
+      }
+
       const userCredential = await signInWithEmailAndPassword(
         auth,
         email,
@@ -102,7 +144,10 @@ class AdminAuthService {
   // Sign out
   async signOut(): Promise<void> {
     try {
-      await firebaseSignOut(auth);
+      const auth = await getFirebaseAuth();
+      if (auth) {
+        await firebaseSignOut(auth);
+      }
       this.currentUser = null;
     } catch (error) {
       console.error("Sign out error:", error);
@@ -164,9 +209,9 @@ class AdminAuthService {
 
   // Force refresh ID token to get latest custom claims
   async refreshToken(): Promise<void> {
-    const user = auth.currentUser;
-    if (user) {
-      await user.getIdToken(true); // Force refresh
+    const auth = await getFirebaseAuth();
+    if (auth && auth.currentUser) {
+      await auth.currentUser.getIdToken(true); // Force refresh
     }
   }
 }
