@@ -1,12 +1,12 @@
 // src/lib/firebase/admin.ts
-// Firebase Admin SDK Configuration for WAISPATH Admin Dashboard
+// Firebase Admin SDK Configuration for WAISPATH Admin Dashboard - Properly Typed
 
-import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
+import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getAuth, type Auth } from "firebase-admin/auth";
 
-// Validate environment variables
-function validateAdminConfig() {
+// Validate environment variables - Only validate when needed, not on import
+function validateAdminConfig(): void {
   const required = [
     "FIREBASE_ADMIN_PROJECT_ID",
     "FIREBASE_ADMIN_CLIENT_EMAIL",
@@ -24,44 +24,109 @@ function validateAdminConfig() {
   }
 }
 
-// Validate config before proceeding
-validateAdminConfig();
+// Lazy initialization - only initialize when first accessed
+let adminAppInstance: App | null = null;
+let adminDbInstance: Firestore | null = null;
+let adminAuthInstance: Auth | null = null;
 
-// Initialize Firebase Admin SDK
-const firebaseAdminConfig = {
-  projectId: process.env.FIREBASE_ADMIN_PROJECT_ID!,
-  clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-  privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY!.replace(/\\n/g, "\n"),
-};
+function initializeAdminApp(): App {
+  if (adminAppInstance) return adminAppInstance;
 
-// Initialize admin app if not already initialized
-let adminApp;
-if (!getApps().length) {
-  adminApp = initializeApp({
-    credential: cert(firebaseAdminConfig),
-    projectId: firebaseAdminConfig.projectId,
-  });
-} else {
-  adminApp = getApps()[0];
+  // Validate config before proceeding
+  validateAdminConfig();
+
+  // Initialize Firebase Admin SDK
+  const firebaseAdminConfig = {
+    projectId: process.env.FIREBASE_ADMIN_PROJECT_ID!,
+    clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
+    privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY!.replace(/\\n/g, "\n"),
+  };
+
+  // Initialize admin app if not already initialized
+  if (!getApps().length) {
+    adminAppInstance = initializeApp({
+      credential: cert(firebaseAdminConfig),
+      projectId: firebaseAdminConfig.projectId,
+    });
+  } else {
+    adminAppInstance = getApps()[0];
+  }
+
+  return adminAppInstance;
 }
 
-// Export admin services - THESE ARE THE MISSING EXPORTS
-export const adminDb = getFirestore(adminApp);
-export const adminAuth = getAuth(adminApp);
+// Lazy getters for admin services
+export function getAdminDb(): Firestore {
+  if (!adminDbInstance) {
+    const app = initializeAdminApp();
+    adminDbInstance = getFirestore(app);
+  }
+  return adminDbInstance;
+}
+
+export function getAdminAuth(): Auth {
+  if (!adminAuthInstance) {
+    const app = initializeAdminApp();
+    adminAuthInstance = getAuth(app);
+  }
+  return adminAuthInstance;
+}
+
+// Export lazy-loaded services with proper typing
+export const adminDb = new Proxy({} as Firestore, {
+  get(target, prop) {
+    const db = getAdminDb();
+    const value = (db as unknown as Record<string, unknown>)[prop as string];
+    return typeof value === "function" ? value.bind(db) : value;
+  },
+});
+
+export const adminAuth = new Proxy({} as Auth, {
+  get(target, prop) {
+    const auth = getAdminAuth();
+    const value = (auth as unknown as Record<string, unknown>)[prop as string];
+    return typeof value === "function" ? value.bind(auth) : value;
+  },
+});
+
+// Interface for obstacle data
+interface ObstacleData {
+  id: string;
+  type: string;
+  severity: string;
+  status: string;
+  reportedAt: Date;
+  reportedBy: string;
+  upvotes: number;
+  downvotes: number;
+  verified: boolean;
+  createdAt: Date;
+  [key: string]: unknown;
+}
+
+// Interface for user data
+interface UserData {
+  id: string;
+  type: string;
+  createdAt: Date;
+  lastUpdated: Date;
+  [key: string]: unknown;
+}
 
 // Admin-specific database operations
 export const adminFirebaseServices = {
   // Obstacle Management
   obstacles: {
     // Get all obstacles with admin metadata
-    getAll: async () => {
+    getAll: async (): Promise<ObstacleData[]> => {
       try {
-        const snapshot = await adminDb.collection("obstacles").get();
+        const db = getAdminDb();
+        const snapshot = await db.collection("obstacles").get();
         return snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
           createdAt: doc.data().reportedAt?.toDate() || new Date(),
-        }));
+        })) as ObstacleData[];
       } catch (error) {
         console.error("Admin: Failed to fetch obstacles:", error);
         throw error;
@@ -71,9 +136,10 @@ export const adminFirebaseServices = {
     // Get obstacles by status
     getByStatus: async (
       status: "pending" | "verified" | "resolved" | "false_report"
-    ) => {
+    ): Promise<ObstacleData[]> => {
       try {
-        const snapshot = await adminDb
+        const db = getAdminDb();
+        const snapshot = await db
           .collection("obstacles")
           .where("status", "==", status)
           .orderBy("reportedAt", "desc")
@@ -83,7 +149,7 @@ export const adminFirebaseServices = {
           id: doc.id,
           ...doc.data(),
           createdAt: doc.data().reportedAt?.toDate() || new Date(),
-        }));
+        })) as ObstacleData[];
       } catch (error) {
         console.error(`Admin: Failed to fetch ${status} obstacles:`, error);
         throw error;
@@ -96,72 +162,40 @@ export const adminFirebaseServices = {
       status: "verified" | "resolved" | "false_report",
       adminId: string,
       adminNotes?: string
-    ) => {
+    ): Promise<void> => {
       try {
-        await adminDb
-          .collection("obstacles")
-          .doc(obstacleId)
-          .update({
-            status,
-            reviewedBy: adminId,
-            reviewedAt: new Date(),
-            adminNotes: adminNotes || null,
-          });
-        console.log(`Admin: Obstacle ${obstacleId} updated to ${status}`);
-      } catch (error) {
-        console.error("Admin: Failed to update obstacle status:", error);
-        throw error;
-      }
-    },
-
-    // Bulk status update
-    bulkUpdateStatus: async (
-      obstacleIds: string[],
-      status: "verified" | "resolved" | "false_report",
-      adminId: string
-    ) => {
-      try {
-        const batch = adminDb.batch();
-        const updateData = {
+        const db = getAdminDb();
+        await db.collection("obstacles").doc(obstacleId).update({
           status,
           reviewedBy: adminId,
           reviewedAt: new Date(),
-        };
-
-        obstacleIds.forEach((id) => {
-          const ref = adminDb.collection("obstacles").doc(id);
-          batch.update(ref, updateData);
+          adminNotes,
+          lastUpdated: new Date(),
         });
 
-        await batch.commit();
-        console.log(
-          `Admin: Bulk updated ${obstacleIds.length} obstacles to ${status}`
-        );
+        console.log(`Admin: Updated obstacle ${obstacleId} to ${status}`);
       } catch (error) {
-        console.error("Admin: Failed to bulk update obstacles:", error);
+        console.error("Admin: Failed to update obstacle:", error);
         throw error;
       }
     },
-  },
 
-  // Analytics
-  analytics: {
-    // Get obstacle statistics
-    getObstacleStats: async () => {
+    // Get statistics
+    getStats: async (): Promise<{
+      total: number;
+      pending: number;
+      verified: number;
+      resolved: number;
+      falseReports: number;
+    }> => {
       try {
-        const all = await adminDb.collection("obstacles").get();
-        const pending = await adminDb
-          .collection("obstacles")
-          .where("status", "==", "pending")
-          .get();
-        const verified = await adminDb
-          .collection("obstacles")
-          .where("status", "==", "verified")
-          .get();
-        const resolved = await adminDb
-          .collection("obstacles")
-          .where("status", "==", "resolved")
-          .get();
+        const db = getAdminDb();
+        const [all, pending, verified, resolved] = await Promise.all([
+          db.collection("obstacles").get(),
+          db.collection("obstacles").where("status", "==", "pending").get(),
+          db.collection("obstacles").where("status", "==", "verified").get(),
+          db.collection("obstacles").where("status", "==", "resolved").get(),
+        ]);
 
         return {
           total: all.size,
@@ -176,15 +210,61 @@ export const adminFirebaseServices = {
       }
     },
   },
+
+  // User Management
+  users: {
+    getAll: async (): Promise<UserData[]> => {
+      try {
+        const db = getAdminDb();
+        const snapshot = await db.collection("userProfiles").get();
+        return snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as UserData[];
+      } catch (error) {
+        console.error("Admin: Failed to fetch users:", error);
+        throw error;
+      }
+    },
+
+    getUserStats: async (
+      userId: string
+    ): Promise<{
+      profile: UserData | null;
+      obstaclesReported: number;
+      contributions: ObstacleData[];
+    }> => {
+      try {
+        const db = getAdminDb();
+        const [profile, obstacles] = await Promise.all([
+          db.collection("userProfiles").doc(userId).get(),
+          db.collection("obstacles").where("reportedBy", "==", userId).get(),
+        ]);
+
+        return {
+          profile: profile.exists ? (profile.data() as UserData) : null,
+          obstaclesReported: obstacles.size,
+          contributions: obstacles.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as ObstacleData[],
+        };
+      } catch (error) {
+        console.error("Admin: Failed to fetch user stats:", error);
+        throw error;
+      }
+    },
+  },
 };
 
 // Utility function to verify admin permissions
 export const verifyAdminUser = async (email: string): Promise<boolean> => {
   try {
-    const user = await adminAuth.getUserByEmail(email);
+    const auth = getAdminAuth();
+    const user = await auth.getUserByEmail(email);
 
     // Check if user has admin custom claims
-    const userRecord = await adminAuth.getUser(user.uid);
+    const userRecord = await auth.getUser(user.uid);
     return userRecord.customClaims?.admin === true;
   } catch (error) {
     console.error("Admin verification failed:", error);
@@ -195,7 +275,8 @@ export const verifyAdminUser = async (email: string): Promise<boolean> => {
 // Set admin custom claims
 export const setAdminClaims = async (uid: string): Promise<void> => {
   try {
-    await adminAuth.setCustomUserClaims(uid, { admin: true });
+    const auth = getAdminAuth();
+    await auth.setCustomUserClaims(uid, { admin: true });
     console.log(`Admin claims set for user: ${uid}`);
   } catch (error) {
     console.error("Failed to set admin claims:", error);

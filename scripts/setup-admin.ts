@@ -1,5 +1,5 @@
 // scripts/setup-admin.ts
-// Fixed admin setup script with proper environment loading
+// Fixed admin setup script for WAISPATH Admin Dashboard
 
 // Load environment variables from .env.local
 import { config } from "dotenv";
@@ -8,11 +8,8 @@ import { resolve } from "path";
 // Load .env.local file
 config({ path: resolve(process.cwd(), ".env.local") });
 
-import { adminAuth, adminDb } from "../src/lib/firebase/admin";
-import type {
-  QueryDocumentSnapshot,
-  DocumentData,
-} from "firebase-admin/firestore";
+// Import after env vars are loaded
+import { getAdminAuth, getAdminDb } from "../src/lib/firebase/admin";
 
 interface AdminSetupConfig {
   email: string;
@@ -70,6 +67,8 @@ class AdminSetup {
       console.log(`🔑 Setting up admin user: ${config.email}`);
 
       // Get user by email
+      const adminAuth = getAdminAuth();
+      const adminDb = getAdminDb();
       const userRecord = await adminAuth.getUserByEmail(config.email);
       console.log(`✅ Found user: ${userRecord.uid}`);
 
@@ -104,7 +103,6 @@ class AdminSetup {
       console.log("4. Use the password you set in Firebase Console");
     } catch (error) {
       const firebaseError = error as { code?: string; message?: string };
-
       if (firebaseError.code === "auth/user-not-found") {
         console.error(`❌ User not found: ${config.email}`);
         console.error(`   Please create a Firebase Auth account first:`);
@@ -129,6 +127,7 @@ class AdminSetup {
       console.log("📋 Current admin users:");
       console.log("");
 
+      const adminDb = getAdminDb();
       const adminsSnapshot = await adminDb
         .collection("admins")
         .where("active", "==", true)
@@ -139,21 +138,18 @@ class AdminSetup {
         return;
       }
 
-      // Fixed: Properly typed parameters
-      adminsSnapshot.docs.forEach(
-        (doc: QueryDocumentSnapshot<DocumentData>, index: number) => {
-          const data = doc.data();
-          console.log(`${index + 1}. ${data.email}`);
-          console.log(`   Role: ${data.role}`);
-          console.log(`   Permissions: ${data.permissions.length} total`);
-          console.log(
-            `   Setup: ${
-              data.setupAt?.toDate?.()?.toLocaleDateString() || "Unknown"
-            }`
-          );
-          console.log("");
-        }
-      );
+      adminsSnapshot.docs.forEach((doc, index: number) => {
+        const data = doc.data();
+        console.log(`${index + 1}. ${data.email}`);
+        console.log(`   Role: ${data.role}`);
+        console.log(`   Permissions: ${data.permissions.length} total`);
+        console.log(
+          `   Setup: ${
+            data.setupAt?.toDate?.()?.toLocaleDateString() || "Unknown"
+          }`
+        );
+        console.log("");
+      });
     } catch (error) {
       console.error("❌ Failed to list admins:", error);
     }
@@ -161,10 +157,10 @@ class AdminSetup {
 }
 
 // Export for use in setup scripts
-export const adminSetup = new AdminSetup();
+const adminSetup = new AdminSetup();
 
 // CLI usage with the provided email
-export async function runInitialSetup(email: string): Promise<void> {
+async function runInitialSetup(email: string): Promise<void> {
   try {
     const initialAdmin: AdminSetupConfig = {
       email: email,
@@ -179,23 +175,24 @@ export async function runInitialSetup(email: string): Promise<void> {
   }
 }
 
-// CLI usage
-if (require.main === module) {
+// Main execution logic
+async function main() {
   const command = process.argv[2];
   const email = process.argv[3];
 
   switch (command) {
     case "setup":
       if (!email) {
-        console.error("Usage: npm run setup-admin setup your-email@gmail.com");
+        console.error(
+          "❌ Usage: npm run setup-admin setup your-email@gmail.com"
+        );
         process.exit(1);
       }
-      // Use the provided email
-      runInitialSetup(email);
+      await runInitialSetup(email);
       break;
 
     case "list":
-      adminSetup.listAdmins();
+      await adminSetup.listAdmins();
       break;
 
     default:
@@ -212,4 +209,12 @@ if (require.main === module) {
       console.log("2. Run: npm run setup-admin setup your-email@gmail.com");
       console.log("3. Test login at: http://localhost:3000/auth/login");
   }
+}
+
+// Run if this script is executed directly
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("Script failed:", error);
+    process.exit(1);
+  });
 }
