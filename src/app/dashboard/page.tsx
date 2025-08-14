@@ -244,8 +244,8 @@ export default function AdminDashboard() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900">Welcome back!</h2>
           <p className="mt-2 text-gray-600">
-            Here's what's happening with WAISPATH accessibility data in Pasig
-            City.
+            Here&apos;s what&apos;s happening with WAISPATH accessibility data
+            in Pasig City.
           </p>
         </div>
 
