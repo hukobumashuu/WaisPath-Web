@@ -1,6 +1,9 @@
+// src/lib/hooks/useFirebaseObstacles.ts
+// FIXED: No more infinite loops, proper dependency management! 🔥💪
+
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { adminObstacleService } from "@/lib/firebase/adminObstacleService";
 import { AdminObstacle, ObstacleStatus } from "@/types/admin";
 
@@ -12,7 +15,8 @@ interface UseFirebaseObstaclesOptions {
 }
 
 export function useFirebaseObstacles(
-  options: UseFirebaseObstaclesOptions = {}
+  options: UseFirebaseObstaclesOptions = {},
+  adminUserId: string = ""
 ) {
   const [obstacles, setObstacles] = useState<AdminObstacle[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,31 +30,75 @@ export function useFirebaseObstacles(
     totalVotes: 0,
   });
 
-  // Load obstacles from Firebase
+  // 🔥 FIX: Use refs to prevent infinite re-renders
+  const hasLoadedRef = useRef(false);
+  const optionsRef = useRef(options);
+
+  // Update options ref when they change
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [
+    options.autoLoad,
+    options.limit,
+    options.timeframeDays,
+    JSON.stringify(options.status),
+  ]);
+
+  // 🔥 FIX: Stable load function with proper dependencies
   const loadObstacles = useCallback(async () => {
+    console.log("🔥 Loading obstacles - Starting...");
     setLoading(true);
     setError(null);
 
     try {
+      console.log("📡 Attempting Firebase connection...");
+
+      // Test connection first
+      const isConnected = await adminObstacleService.testConnection();
+      if (!isConnected) {
+        throw new Error("Firebase connection failed");
+      }
+
+      console.log("✅ Firebase connected, loading obstacles...");
+
       let loadedObstacles: AdminObstacle[];
 
-      if (options.timeframeDays) {
+      if (optionsRef.current.timeframeDays) {
         // Load obstacles for specific timeframe (for reports)
         loadedObstacles = await adminObstacleService.getObstaclesInTimeframe(
-          options.timeframeDays
+          optionsRef.current.timeframeDays
         );
       } else {
         // Load all obstacles with filtering
         loadedObstacles = await adminObstacleService.getAllObstacles({
-          limit: options.limit,
-          status: options.status,
+          limit: optionsRef.current.limit,
+          status: optionsRef.current.status,
           orderBy: "reportedAt",
           orderDirection: "desc",
         });
       }
 
       setObstacles(loadedObstacles);
-      console.log(`🔥 Loaded ${loadedObstacles.length} obstacles via hook`);
+      hasLoadedRef.current = true;
+
+      console.log(
+        `✅ Loaded ${loadedObstacles.length} obstacles from Firebase`
+      );
+
+      // Calculate stats
+      const newStats = {
+        total: loadedObstacles.length,
+        pending: loadedObstacles.filter((o) => o.status === "pending").length,
+        verified: loadedObstacles.filter((o) => o.status === "verified").length,
+        resolved: loadedObstacles.filter((o) => o.status === "resolved").length,
+        falseReports: loadedObstacles.filter((o) => o.status === "false_report")
+          .length,
+        totalVotes: loadedObstacles.reduce(
+          (sum, o) => sum + o.upvotes + o.downvotes,
+          0
+        ),
+      };
+      setStats(newStats);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to load obstacles";
@@ -59,35 +107,25 @@ export function useFirebaseObstacles(
     } finally {
       setLoading(false);
     }
-  }, [options.limit, options.status, options.timeframeDays]);
+  }, []); // 🔥 FIX: Empty dependency array, use refs for options
 
-  // Load statistics
-  const loadStats = useCallback(async () => {
-    try {
-      const obstacleStats = await adminObstacleService.getObstacleStats();
-      setStats(obstacleStats);
-    } catch (err) {
-      console.error("❌ Error loading stats:", err);
-    }
-  }, []);
-
-  // Update obstacle status
+  // 🔥 FIX: Stable update function
   const updateObstacleStatus = useCallback(
     async (
       obstacleId: string,
       status: ObstacleStatus,
-      adminUserId: string,
+      adminId: string,
       adminNotes?: string
     ) => {
       try {
         await adminObstacleService.updateObstacleStatus(
           obstacleId,
           status,
-          adminUserId,
+          adminId,
           adminNotes
         );
 
-        // Update local state
+        // Update local state immediately for UI responsiveness
         setObstacles((prev) =>
           prev.map((obstacle) =>
             obstacle.id === obstacleId
@@ -95,7 +133,7 @@ export function useFirebaseObstacles(
                   ...obstacle,
                   status,
                   verified: status === "verified",
-                  reviewedBy: adminUserId,
+                  reviewedBy: adminId,
                   reviewedAt: new Date(),
                   adminNotes,
                 }
@@ -114,18 +152,40 @@ export function useFirebaseObstacles(
     []
   );
 
-  // Test Firebase connection
+  // 🔥 FIX: Test connection function
   const testConnection = useCallback(async () => {
-    return await adminObstacleService.testConnection();
+    try {
+      return await adminObstacleService.testConnection();
+    } catch (err) {
+      console.error("❌ Connection test failed:", err);
+      return false;
+    }
   }, []);
 
-  // Auto-load on mount if enabled
+  // 🔥 FIX: Controlled auto-load with proper conditions
   useEffect(() => {
-    if (options.autoLoad !== false) {
+    console.log("🚀 Auto-loading obstacles...");
+    console.log("🔍 Hook State:", {
+      autoLoad: options.autoLoad,
+      hasLoaded: hasLoadedRef.current,
+      loading,
+      adminUserId,
+    });
+
+    // Only auto-load if:
+    // 1. autoLoad is not explicitly false
+    // 2. Haven't loaded yet
+    // 3. Not currently loading
+    // 4. Have adminUserId (for authenticated calls)
+    if (
+      options.autoLoad !== false &&
+      !hasLoadedRef.current &&
+      !loading &&
+      adminUserId
+    ) {
       loadObstacles();
-      loadStats();
     }
-  }, [loadObstacles, loadStats, options.autoLoad]);
+  }, [options.autoLoad, adminUserId, loading, loadObstacles]);
 
   return {
     obstacles,
@@ -133,7 +193,6 @@ export function useFirebaseObstacles(
     error,
     stats,
     loadObstacles,
-    loadStats,
     updateObstacleStatus,
     testConnection,
     // Computed values
