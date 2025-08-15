@@ -1,14 +1,14 @@
 // src/components/admin/PriorityDashboard.tsx
-// FIXED: All TypeScript errors resolved! 🔥💪
+// FIXED: Stable loading states, no rapid switching
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AdminObstacle, ObstacleStatus, ObstacleType } from "@/types/admin";
 import { useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
 import { useAdminAuth } from "@/lib/auth/firebase-auth";
 
-// ✅ Same interfaces as before
+// Priority interfaces (same as before)
 interface PriorityResult {
   score: number;
   category: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -40,7 +40,7 @@ interface DashboardStats {
   avgScore: number;
 }
 
-// ✅ Priority Calculator
+// Priority Calculator (same as before)
 class PriorityCalculator {
   calculatePriority(obstacle: AdminObstacle): PriorityResult {
     const severityPoints = this.getSeverityPoints(obstacle.severity);
@@ -140,7 +140,6 @@ class PriorityCalculator {
       "construction",
       "flooding",
     ];
-
     if (quickFix.includes(type)) return "Quick Fix";
     if (majorInfra.includes(type)) return "Major Infrastructure";
     return "Medium Project";
@@ -157,68 +156,37 @@ class PriorityCalculator {
   }
 }
 
-// ✅ Component: Priority Stats Cards
+// Stats Cards Component
 function PriorityStatsCards({ stats }: { stats: DashboardStats }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center">
-          <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-            🔥
-          </div>
-          <div className="ml-4">
-            <p className="text-sm font-medium text-gray-500">Critical</p>
-            <p className="text-2xl font-semibold text-red-900">
-              {stats.critical}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center">
-          <div className="w-12 h-12 bg-orange-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-            ⚠️
-          </div>
-          <div className="ml-4">
-            <p className="text-sm font-medium text-gray-500">High</p>
-            <p className="text-2xl font-semibold text-orange-900">
-              {stats.high}
-            </p>
+      {[
+        { label: "Critical", count: stats.critical, color: "red", icon: "🔥" },
+        { label: "High", count: stats.high, color: "orange", icon: "⚠️" },
+        { label: "Medium", count: stats.medium, color: "yellow", icon: "📋" },
+        { label: "Low", count: stats.low, color: "green", icon: "✅" },
+      ].map(({ label, count, color, icon }) => (
+        <div key={label} className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div
+              className={`w-12 h-12 bg-${color}-600 rounded-lg flex items-center justify-center text-white font-bold text-xl`}
+            >
+              {icon}
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-500">{label}</p>
+              <p className={`text-2xl font-semibold text-${color}-900`}>
+                {count}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center">
-          <div className="w-12 h-12 bg-yellow-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-            📋
-          </div>
-          <div className="ml-4">
-            <p className="text-sm font-medium text-gray-500">Medium</p>
-            <p className="text-2xl font-semibold text-yellow-900">
-              {stats.medium}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center">
-          <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-            ✅
-          </div>
-          <div className="ml-4">
-            <p className="text-sm font-medium text-gray-500">Low</p>
-            <p className="text-2xl font-semibold text-green-900">{stats.low}</p>
-          </div>
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
 
-// ✅ Component: Priority Filter Tabs
+// Filter Tabs Component
 function PriorityFilterTabs({
   activeFilter,
   onFilterChange,
@@ -289,7 +257,7 @@ function PriorityFilterTabs({
   );
 }
 
-// ✅ Component: Priority Obstacle Card
+// Obstacle Card Component
 function PriorityObstacleCard({
   obstacle,
   rank,
@@ -377,13 +345,11 @@ function PriorityObstacleCard({
               </button>
             </>
           )}
-
           {obstacle.status === "verified" && (
             <div className="text-center py-2 px-4 bg-green-100 text-green-800 rounded text-sm">
               ✅ Verified
             </div>
           )}
-
           {obstacle.status === "resolved" && (
             <div className="text-center py-2 px-4 bg-blue-100 text-blue-800 rounded text-sm">
               🔧 Resolved
@@ -395,26 +361,13 @@ function PriorityObstacleCard({
   );
 }
 
-// ✅ MAIN COMPONENT: Now uses REAL Firebase data!
+// 🔥 MAIN COMPONENT: Fixed with stable states
 export default function PriorityDashboard() {
   const { user } = useAdminAuth();
-  const [filteredObstacles, setFilteredObstacles] = useState<
-    PriorityObstacle[]
-  >([]);
   const [activeFilter, setActiveFilter] = useState<string>("all");
-  const [stats, setStats] = useState<DashboardStats>({
-    total: 0,
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    urgentCount: 0,
-    avgScore: 0,
-  });
-
   const [priorityCalculator] = useState(() => new PriorityCalculator());
 
-  // 🔥 FIXED: Use real Firebase data with adminUserId!
+  // 🔥 FIX: Use real Firebase data
   const {
     obstacles: firebaseObstacles,
     loading,
@@ -423,71 +376,60 @@ export default function PriorityDashboard() {
     loadObstacles,
   } = useFirebaseObstacles({ autoLoad: true }, user?.uid || "");
 
-  const [prioritizedObstacles, setPrioritizedObstacles] = useState<
-    PriorityObstacle[]
-  >([]);
+  // 🔥 FIX: Use useMemo to prevent recalculation loops
+  const prioritizedObstacles = useMemo(() => {
+    if (firebaseObstacles.length === 0) return [];
 
-  // Calculate priorities when Firebase data changes
-  useEffect(() => {
-    if (firebaseObstacles.length > 0) {
-      console.log(
-        `🔥 Processing ${firebaseObstacles.length} obstacles from Firebase...`
-      );
+    console.log(
+      `🔥 Processing ${firebaseObstacles.length} obstacles for priority analysis...`
+    );
 
-      // Calculate priority for each obstacle
-      const processed = firebaseObstacles.map((obstacle) => ({
-        ...obstacle,
-        priorityResult: priorityCalculator.calculatePriority(obstacle),
-      }));
+    const processed = firebaseObstacles.map((obstacle) => ({
+      ...obstacle,
+      priorityResult: priorityCalculator.calculatePriority(obstacle),
+    }));
 
-      // Sort by priority score (highest first)
-      processed.sort((a, b) => b.priorityResult.score - a.priorityResult.score);
+    // Sort by priority score (highest first)
+    processed.sort((a, b) => b.priorityResult.score - a.priorityResult.score);
 
-      setPrioritizedObstacles(processed);
-
-      // Calculate stats
-      const total = processed.length;
-      const critical = processed.filter(
-        (o) => o.priorityResult.category === "CRITICAL"
-      ).length;
-      const high = processed.filter(
-        (o) => o.priorityResult.category === "HIGH"
-      ).length;
-      const medium = processed.filter(
-        (o) => o.priorityResult.category === "MEDIUM"
-      ).length;
-      const low = processed.filter(
-        (o) => o.priorityResult.category === "LOW"
-      ).length;
-      const urgentCount = critical + high;
-      const totalScore = processed.reduce(
-        (sum, o) => sum + o.priorityResult.score,
-        0
-      );
-      const avgScore = total > 0 ? Math.round(totalScore / total) : 0;
-
-      setStats({ total, critical, high, medium, low, urgentCount, avgScore });
-
-      console.log(
-        `✅ Processed obstacles - Critical: ${critical}, High: ${high}, Medium: ${medium}, Low: ${low}`
-      );
-    }
+    return processed;
   }, [firebaseObstacles, priorityCalculator]);
 
-  // Filter obstacles when filter changes
-  useEffect(() => {
-    if (activeFilter === "all") {
-      setFilteredObstacles(prioritizedObstacles);
-    } else {
-      const filtered = prioritizedObstacles.filter(
-        (obstacle) =>
-          obstacle.priorityResult.category.toLowerCase() === activeFilter
-      );
-      setFilteredObstacles(filtered);
-    }
+  // 🔥 FIX: Calculate stats from prioritized obstacles
+  const stats = useMemo(() => {
+    const total = prioritizedObstacles.length;
+    const critical = prioritizedObstacles.filter(
+      (o) => o.priorityResult.category === "CRITICAL"
+    ).length;
+    const high = prioritizedObstacles.filter(
+      (o) => o.priorityResult.category === "HIGH"
+    ).length;
+    const medium = prioritizedObstacles.filter(
+      (o) => o.priorityResult.category === "MEDIUM"
+    ).length;
+    const low = prioritizedObstacles.filter(
+      (o) => o.priorityResult.category === "LOW"
+    ).length;
+    const urgentCount = critical + high;
+    const totalScore = prioritizedObstacles.reduce(
+      (sum, o) => sum + o.priorityResult.score,
+      0
+    );
+    const avgScore = total > 0 ? Math.round(totalScore / total) : 0;
+
+    return { total, critical, high, medium, low, urgentCount, avgScore };
+  }, [prioritizedObstacles]);
+
+  // 🔥 FIX: Filter obstacles without causing state loops
+  const filteredObstacles = useMemo(() => {
+    if (activeFilter === "all") return prioritizedObstacles;
+    return prioritizedObstacles.filter(
+      (obstacle) =>
+        obstacle.priorityResult.category.toLowerCase() === activeFilter
+    );
   }, [prioritizedObstacles, activeFilter]);
 
-  // Handle admin actions with real Firebase updates
+  // Handle admin actions
   const handleVerify = async (obstacleId: string) => {
     try {
       await updateObstacleStatus(
@@ -496,8 +438,7 @@ export default function PriorityDashboard() {
         user?.uid || "",
         "Verified via Priority Dashboard"
       );
-      console.log(`✅ Verified obstacle ${obstacleId} in Firebase`);
-      await loadObstacles();
+      console.log(`✅ Verified obstacle ${obstacleId}`);
     } catch (error) {
       console.error("❌ Error verifying obstacle:", error);
       alert("Failed to verify obstacle. Please try again.");
@@ -512,8 +453,7 @@ export default function PriorityDashboard() {
         user?.uid || "",
         "Rejected via Priority Dashboard"
       );
-      console.log(`❌ Rejected obstacle ${obstacleId} in Firebase`);
-      await loadObstacles();
+      console.log(`❌ Rejected obstacle ${obstacleId}`);
     } catch (error) {
       console.error("❌ Error rejecting obstacle:", error);
       alert("Failed to reject obstacle. Please try again.");

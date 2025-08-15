@@ -15,70 +15,120 @@ import {
 import { db } from "./config";
 import { AdminObstacle, ObstacleStatus } from "@/types/admin";
 
-// ✅ STEP 4C: Firebase-to-AdminObstacle converter (FINAL BOSS DEFEATED VERSION!)
+/** Utility: wrap a promise with a timeout so reads don't hang forever */
+function withTimeout<T>(
+  p: Promise<T>,
+  ms = 15000,
+  msg = "Request timed out"
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => {
+      reject(new Error(msg));
+    }, ms);
+    p.then((v) => {
+      clearTimeout(id);
+      resolve(v);
+    }).catch((e) => {
+      clearTimeout(id);
+      reject(e);
+    });
+  });
+}
+
+/** Safe error extractor (avoids `any`) */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+/** Narrow unknown to a timestamp-like object with toDate() */
+function isTimestampLike(v: unknown): v is { toDate: () => Date } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "toDate" in v &&
+    typeof (v as { toDate?: unknown }).toDate === "function"
+  );
+}
+
+/** Convert Firestore DocumentSnapshot -> AdminObstacle (defensive) */
 function convertFirebaseToAdminObstacle(
-  doc: DocumentSnapshot<DocumentData>
+  docSnap: DocumentSnapshot<DocumentData>
 ): AdminObstacle {
-  const data = doc.data();
+  const data = docSnap.data();
 
   if (!data) {
-    throw new Error(`Document ${doc.id} has no data`);
+    throw new Error(`Document ${docSnap.id} has no data`);
   }
 
-  // Handle Firestore Timestamp conversion (FINAL BOSS DEFEATED!)
   const convertTimestamp = (timestamp: unknown): Date => {
-    if (timestamp instanceof Timestamp) {
-      return timestamp.toDate();
+    try {
+      if (timestamp instanceof Timestamp) {
+        return timestamp.toDate();
+      }
+      if (isTimestampLike(timestamp)) {
+        return timestamp.toDate();
+      }
+      if (timestamp instanceof Date) {
+        return timestamp;
+      }
+      if (typeof timestamp === "number") {
+        return new Date(timestamp);
+      }
+      if (typeof timestamp === "string") {
+        const parsed = Date.parse(timestamp);
+        return isNaN(parsed) ? new Date() : new Date(parsed);
+      }
+      // fallback — return current time rather than undefined to avoid crash
+      return new Date();
+    } catch (err) {
+      console.warn(
+        `convertTimestamp warning for doc ${docSnap.id}:`,
+        getErrorMessage(err)
+      );
+      return new Date();
     }
-    if (
-      timestamp &&
-      typeof timestamp === "object" &&
-      "toDate" in timestamp &&
-      typeof (timestamp as { toDate: () => Date }).toDate === "function"
-    ) {
-      return (timestamp as { toDate: () => Date }).toDate();
-    }
-    if (timestamp instanceof Date) {
-      return timestamp;
-    }
-    if (typeof timestamp === "string") {
-      return new Date(timestamp);
-    }
-    return new Date(); // Fallback to current date
   };
 
   return {
-    id: doc.id,
+    id: docSnap.id,
     location: {
-      latitude: data.location?.latitude || 0,
-      longitude: data.location?.longitude || 0,
+      latitude:
+        typeof data.location?.latitude === "number"
+          ? data.location.latitude
+          : 0,
+      longitude:
+        typeof data.location?.longitude === "number"
+          ? data.location.longitude
+          : 0,
       accuracy: data.location?.accuracy,
     },
-    type: data.type || "other",
-    severity: data.severity || "low",
+    type: (data.type as AdminObstacle["type"]) || "other",
+    severity: (data.severity as AdminObstacle["severity"]) || "low",
     description: data.description || "",
     photoBase64: data.photoBase64,
     timePattern: data.timePattern || "permanent",
 
-    // User info
     reportedBy: data.reportedBy || "unknown",
     reportedAt: convertTimestamp(data.reportedAt),
     deviceType: data.deviceType,
     barangay: data.barangay,
 
-    // Community engagement
-    upvotes: data.upvotes || 0,
-    downvotes: data.downvotes || 0,
+    upvotes: typeof data.upvotes === "number" ? data.upvotes : 0,
+    downvotes: typeof data.downvotes === "number" ? data.downvotes : 0,
 
-    // Admin fields
-    status: data.status || "pending",
-    verified: data.verified || false,
+    status: (data.status as ObstacleStatus) || "pending",
+    verified: !!data.verified,
     reviewedBy: data.reviewedBy,
     reviewedAt: data.reviewedAt ? convertTimestamp(data.reviewedAt) : undefined,
     adminNotes: data.adminNotes,
 
-    // Metadata
-    deleted: data.deleted || false,
+    deleted: !!data.deleted,
     deletedBy: data.deletedBy,
     deletedAt: data.deletedAt ? convertTimestamp(data.deletedAt) : undefined,
     createdAt: convertTimestamp(data.createdAt || data.reportedAt),
@@ -87,10 +137,8 @@ function convertFirebaseToAdminObstacle(
 
 export class AdminObstacleService {
   private readonly COLLECTION_NAME = "obstacles";
+  private readonly READ_TIMEOUT = 15000; // ms - adjust as needed
 
-  /**
-   * Get all obstacles from Firebase with optional filtering
-   */
   async getAllObstacles(
     options: {
       limit?: number;
@@ -104,10 +152,8 @@ export class AdminObstacleService {
 
       const obstaclesRef = collection(db, this.COLLECTION_NAME);
 
-      // Build query
       let obstacleQuery = query(obstaclesRef);
 
-      // Add status filter if specified
       if (options.status && options.status.length > 0) {
         obstacleQuery = query(
           obstacleQuery,
@@ -115,29 +161,28 @@ export class AdminObstacleService {
         );
       }
 
-      // Add ordering
       const orderField = options.orderBy || "reportedAt";
       const orderDirection = options.orderDirection || "desc";
       obstacleQuery = query(obstacleQuery, orderBy(orderField, orderDirection));
 
-      // Add limit
       if (options.limit) {
         obstacleQuery = query(obstacleQuery, limit(options.limit));
       }
 
-      // Execute query
-      const querySnapshot = await getDocs(obstacleQuery);
+      const querySnapshot = await withTimeout(
+        getDocs(obstacleQuery),
+        this.READ_TIMEOUT,
+        `getAllObstacles timed out after ${this.READ_TIMEOUT}ms`
+      );
 
-      // Convert to AdminObstacle objects
       const obstacles: AdminObstacle[] = [];
       querySnapshot.forEach((docSnapshot) => {
         try {
-          const obstacle = convertFirebaseToAdminObstacle(docSnapshot);
-          obstacles.push(obstacle);
-        } catch (error) {
+          obstacles.push(convertFirebaseToAdminObstacle(docSnapshot));
+        } catch (convErr) {
           console.warn(
             `⚠️ Error converting obstacle ${docSnapshot.id}:`,
-            error
+            getErrorMessage(convErr)
           );
         }
       });
@@ -145,39 +190,45 @@ export class AdminObstacleService {
       console.log(`✅ Loaded ${obstacles.length} obstacles from Firebase`);
       return obstacles;
     } catch (error) {
-      console.error("❌ Error loading obstacles from Firebase:", error);
-      throw new Error("Failed to load obstacles from database");
+      console.error(
+        "❌ Error loading obstacles from Firebase:",
+        getErrorMessage(error)
+      );
+      throw new Error(
+        `Failed to load obstacles from database: ${getErrorMessage(error)}`
+      );
     }
   }
 
-  /**
-   * Get obstacles for specific timeframe (for reports)
-   */
   async getObstaclesInTimeframe(days: number): Promise<AdminObstacle[]> {
     try {
       console.log(`📅 Loading obstacles from last ${days} days...`);
-
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
+
+      const cutoffTs = Timestamp.fromDate(cutoffDate);
 
       const obstaclesRef = collection(db, this.COLLECTION_NAME);
       const timeframeQuery = query(
         obstaclesRef,
-        where("reportedAt", ">=", cutoffDate),
+        where("reportedAt", ">=", cutoffTs),
         orderBy("reportedAt", "desc")
       );
 
-      const querySnapshot = await getDocs(timeframeQuery);
+      const querySnapshot = await withTimeout(
+        getDocs(timeframeQuery),
+        this.READ_TIMEOUT,
+        `getObstaclesInTimeframe timed out after ${this.READ_TIMEOUT}ms`
+      );
 
       const obstacles: AdminObstacle[] = [];
       querySnapshot.forEach((docSnapshot) => {
         try {
-          const obstacle = convertFirebaseToAdminObstacle(docSnapshot);
-          obstacles.push(obstacle);
-        } catch (error) {
+          obstacles.push(convertFirebaseToAdminObstacle(docSnapshot));
+        } catch (convErr) {
           console.warn(
             `⚠️ Error converting obstacle ${docSnapshot.id}:`,
-            error
+            getErrorMessage(convErr)
           );
         }
       });
@@ -187,14 +238,18 @@ export class AdminObstacleService {
       );
       return obstacles;
     } catch (error) {
-      console.error("❌ Error loading obstacles by timeframe:", error);
-      throw new Error("Failed to load obstacles for specified timeframe");
+      console.error(
+        "❌ Error loading obstacles by timeframe:",
+        getErrorMessage(error)
+      );
+      throw new Error(
+        `Failed to load obstacles for specified timeframe: ${getErrorMessage(
+          error
+        )}`
+      );
     }
   }
 
-  /**
-   * Update obstacle status (verify/reject)
-   */
   async updateObstacleStatus(
     obstacleId: string,
     status: ObstacleStatus,
@@ -221,14 +276,16 @@ export class AdminObstacleService {
 
       console.log(`✅ Updated obstacle ${obstacleId} status to ${status}`);
     } catch (error) {
-      console.error("❌ Error updating obstacle status:", error);
-      throw new Error("Failed to update obstacle status");
+      console.error(
+        "❌ Error updating obstacle status:",
+        getErrorMessage(error)
+      );
+      throw new Error(
+        `Failed to update obstacle status: ${getErrorMessage(error)}`
+      );
     }
   }
 
-  /**
-   * Get obstacle statistics for dashboard
-   */
   async getObstacleStats(): Promise<{
     total: number;
     pending: number;
@@ -239,9 +296,7 @@ export class AdminObstacleService {
   }> {
     try {
       console.log("📊 Calculating obstacle statistics...");
-
       const obstacles = await this.getAllObstacles();
-
       const stats = {
         total: obstacles.length,
         pending: obstacles.filter((o) => o.status === "pending").length,
@@ -254,37 +309,38 @@ export class AdminObstacleService {
           0
         ),
       };
-
       console.log("✅ Obstacle statistics calculated:", stats);
       return stats;
     } catch (error) {
-      console.error("❌ Error calculating obstacle statistics:", error);
-      throw new Error("Failed to calculate obstacle statistics");
+      console.error(
+        "❌ Error calculating obstacle statistics:",
+        getErrorMessage(error)
+      );
+      throw new Error(
+        `Failed to calculate obstacle statistics: ${getErrorMessage(error)}`
+      );
     }
   }
 
-  /**
-   * Test Firebase connection
-   */
   async testConnection(): Promise<boolean> {
     try {
       console.log("🧪 Testing Firebase connection...");
-
-      // Try to read from obstacles collection
       const obstaclesRef = collection(db, this.COLLECTION_NAME);
       const testQuery = query(obstaclesRef, limit(1));
-      const querySnapshot = await getDocs(testQuery);
-
+      const querySnapshot = await withTimeout(
+        getDocs(testQuery),
+        8000,
+        "testConnection timed out"
+      );
       console.log(
         `✅ Firebase connection successful! Found ${querySnapshot.size} test documents`
       );
       return true;
     } catch (error) {
-      console.error("❌ Firebase connection failed:", error);
+      console.error("❌ Firebase connection failed:", getErrorMessage(error));
       return false;
     }
   }
 }
 
-// Export singleton instance
 export const adminObstacleService = new AdminObstacleService();

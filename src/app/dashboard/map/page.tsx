@@ -1,17 +1,13 @@
 // src/app/dashboard/map/page.tsx
-// SIMPLIFIED: No real-time listeners, just static data loading! 🔥
+// FIXED: Simplified map page with no authentication loops
 
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useAdminAuth } from "@/lib/auth/firebase-auth";
-import { useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
-import {
-  ArrowLeftIcon,
-  FunnelIcon,
-  ExclamationTriangleIcon,
-} from "@heroicons/react/24/outline";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { ArrowLeftIcon, FunnelIcon } from "@heroicons/react/24/outline";
 import { useRouter } from "next/navigation";
+import { useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
+import { useAdminAuth } from "@/lib/auth/firebase-auth";
 import {
   AdminObstacle,
   ObstacleType,
@@ -19,47 +15,79 @@ import {
   ObstacleSeverity,
 } from "@/types/admin";
 
+// Google Maps types
+interface GoogleMap {
+  setCenter: (latLng: { lat: number; lng: number }) => void;
+  setZoom: (zoom: number) => void;
+  [key: string]: unknown;
+}
+
+interface GoogleInfoWindow {
+  setContent: (content: string) => void;
+  open: (map: GoogleMap, marker: GoogleMarker) => void;
+  close: () => void;
+  [key: string]: unknown;
+}
+
+interface GoogleMarker {
+  setMap: (map: GoogleMap | null) => void;
+  addListener: (event: string, callback: () => void) => void;
+  [key: string]: unknown;
+}
+
 interface MapFilters {
   status: ObstacleStatus | "all";
   type: ObstacleType | "all";
   severity: ObstacleSeverity | "all";
+  showHeatmap: boolean;
 }
 
-export default function AdminMapPage() {
-  const { user, loading } = useAdminAuth();
-  const router = useRouter();
-  const [mapLoaded, setMapLoaded] = useState(false);
+declare global {
+  interface Window {
+    google?: {
+      maps: {
+        Map: new (
+          element: HTMLElement,
+          options: Record<string, unknown>
+        ) => GoogleMap;
+        InfoWindow: new () => GoogleInfoWindow;
+        Marker: new (options: Record<string, unknown>) => GoogleMarker;
+      };
+    };
+    initMap?: () => void;
+  }
+}
 
-  // Filters
-  const [filters, setFilters] = useState<MapFilters>({
+export default function InteractiveMapView() {
+  const router = useRouter();
+  const { user } = useAdminAuth();
+
+  // Map state
+  const mapRef = useRef<HTMLDivElement>(null);
+  const googleMapRef = useRef<GoogleMap | null>(null);
+  const infoWindowRef = useRef<GoogleInfoWindow | null>(null);
+  const markersRef = useRef<GoogleMarker[]>([]);
+  const scriptLoadedRef = useRef<boolean>(false);
+
+  // UI state
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters] = useState<MapFilters>({
     status: "all",
     type: "all",
     severity: "all",
+    showHeatmap: false,
   });
-  const [showFilters, setShowFilters] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
-  // 🔥 FIXED: Simplified Firebase data loading
-  const {
-    obstacles: firebaseObstacles,
-    loading: obstaclesLoading,
-    error: obstaclesError,
-    updateObstacleStatus,
-    loadObstacles,
-  } = useFirebaseObstacles({ autoLoad: true }, user?.uid || "");
+  // 🔥 Load Firebase obstacles
+  const { obstacles: firebaseObstacles, loading: obstaclesLoading } =
+    useFirebaseObstacles({ autoLoad: true }, user?.uid || "");
 
+  // Filter obstacles
   const [filteredObstacles, setFilteredObstacles] = useState<AdminObstacle[]>(
     []
   );
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!loading && !user?.isAdmin) {
-      router.push("/auth/login");
-    }
-  }, [user, loading, router]);
-
-  // Filter obstacles
   useEffect(() => {
     let filtered = [...firebaseObstacles];
 
@@ -72,81 +100,283 @@ export default function AdminMapPage() {
     if (filters.severity !== "all") {
       filtered = filtered.filter((obs) => obs.severity === filters.severity);
     }
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (obs) =>
-          obs.description.toLowerCase().includes(query) ||
-          obs.type.toLowerCase().includes(query)
-      );
-    }
 
     setFilteredObstacles(filtered);
-  }, [firebaseObstacles, filters, searchQuery]);
+  }, [firebaseObstacles, filters]);
 
+  // Helper functions for markers
   const getMarkerColor = (obstacle: AdminObstacle) => {
-    if (obstacle.status === "resolved") return "#22C55E";
-    if (obstacle.status === "false_report") return "#6B7280";
+    if (obstacle.status === "resolved") return "#22C55E"; // green
+    if (obstacle.status === "false_report") return "#6B7280"; // gray
 
     switch (obstacle.severity) {
       case "blocking":
-        return "#EF4444";
+        return "#EF4444"; // red
       case "high":
-        return "#F97316";
+        return "#F97316"; // orange
       case "medium":
-        return "#F59E0B";
+        return "#F59E0B"; // yellow
+      case "low":
+        return "#3B82F6"; // blue
       default:
-        return "#6B7280";
+        return "#6B7280"; // gray
     }
   };
 
-  const getMarkerIcon = (type: ObstacleType) => {
-    const iconMap: Record<ObstacleType, string> = {
-      vendor_blocking: "🏪",
-      parked_vehicles: "🚗",
-      construction: "🚧",
-      electrical_post: "⚡",
-      tree_roots: "🌳",
-      no_sidewalk: "⚠️",
-      flooding: "💧",
-      stairs_no_ramp: "🔺",
-      narrow_passage: "↔️",
-      broken_pavement: "🕳️",
-      steep_slope: "⛰️",
-      other: "❓",
+  const getObstacleTypeLabel = (type: ObstacleType) => {
+    const labels: Record<ObstacleType, string> = {
+      vendor_blocking: "Vendor Blocking",
+      parked_vehicles: "Parked Vehicles",
+      construction: "Construction",
+      electrical_post: "Electrical Post",
+      tree_roots: "Tree Roots",
+      no_sidewalk: "No Sidewalk",
+      flooding: "Flooding",
+      stairs_no_ramp: "Stairs (No Ramp)",
+      narrow_passage: "Narrow Passage",
+      broken_pavement: "Broken Pavement",
+      steep_slope: "Steep Slope",
+      other: "Other",
     };
-    return iconMap[type] || "❓";
+    return labels[type] || type;
   };
 
-  const getStatusLabel = (status: ObstacleStatus) => {
-    const labels: Record<ObstacleStatus, string> = {
-      pending: "PENDING",
-      verified: "VERIFIED",
-      resolved: "RESOLVED",
-      false_report: "FALSE",
-    };
-    return labels[status];
-  };
+  // Create markers on the map
+  const createMarkers = useCallback(() => {
+    if (!googleMapRef.current || !window.google?.maps) return;
 
-  const handleObstacleAction = async (
-    id: string,
-    newStatus: ObstacleStatus
-  ) => {
+    // Clear existing markers
+    markersRef.current.forEach((marker) => marker.setMap(null));
+    markersRef.current = [];
+
+    console.log(`🗺️ Creating ${filteredObstacles.length} markers...`);
+
+    filteredObstacles.forEach((obstacle) => {
+      try {
+        const marker = new window.google!.maps.Marker({
+          position: {
+            lat: obstacle.location.latitude,
+            lng: obstacle.location.longitude,
+          },
+          map: googleMapRef.current!,
+          title: `${getObstacleTypeLabel(obstacle.type)} - ${
+            obstacle.severity
+          }`,
+          icon: {
+            path: window.google!.maps.SymbolPath.CIRCLE,
+            scale: 12,
+            fillColor: getMarkerColor(obstacle),
+            fillOpacity: 0.8,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          },
+        });
+
+        // Add click listener for info window
+        marker.addListener("click", () => {
+          if (infoWindowRef.current && googleMapRef.current) {
+            const content = `
+              <div style="max-width: 300px;">
+                <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 16px; font-weight: 600;">
+                  ${getObstacleTypeLabel(obstacle.type)}
+                </h3>
+                <p style="margin: 0 0 8px 0; color: #4b5563; font-size: 14px;">
+                  ${obstacle.description}
+                </p>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                  <span style="background: ${getMarkerColor(
+                    obstacle
+                  )}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                    ${obstacle.severity.toUpperCase()}
+                  </span>
+                  <span style="background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                    ${obstacle.status.replace("_", " ").toUpperCase()}
+                  </span>
+                </div>
+                <div style="color: #6b7280; font-size: 12px;">
+                  📅 ${obstacle.reportedAt.toLocaleDateString()}<br>
+                  👍 ${obstacle.upvotes} 👎 ${obstacle.downvotes}<br>
+                  📍 ${obstacle.location.latitude.toFixed(
+                    4
+                  )}, ${obstacle.location.longitude.toFixed(4)}
+                </div>
+              </div>
+            `;
+            infoWindowRef.current.setContent(content);
+            infoWindowRef.current.open(googleMapRef.current, marker);
+          }
+        });
+
+        markersRef.current.push(marker);
+      } catch (error) {
+        console.error(
+          "❌ Error creating marker for obstacle:",
+          obstacle.id,
+          error
+        );
+      }
+    });
+
+    console.log(`✅ Created ${markersRef.current.length} markers`);
+  }, [filteredObstacles]); // Remove createMarkers from dependencies
+
+  // Update markers when obstacles change
+  useEffect(() => {
+    if (googleMapRef.current && filteredObstacles.length > 0) {
+      createMarkers();
+    }
+  }, [filteredObstacles, createMarkers]);
+  const initializeMap = useCallback(() => {
+    console.log("🗺️ Initializing Google Maps...");
+
+    if (!mapRef.current) {
+      console.error("❌ Map container ref not available");
+      return;
+    }
+
+    if (!window.google) {
+      console.error("❌ Google Maps API not loaded");
+      return;
+    }
+
     try {
-      await updateObstacleStatus(id, newStatus, user?.uid || "");
-      console.log(`✅ Obstacle ${id} updated to ${newStatus}`);
-      // Reload obstacles to see changes
-      await loadObstacles();
-    } catch (error) {
-      console.error("❌ Error updating obstacle:", error);
-      alert("Failed to update obstacle. Please try again.");
-    }
-  };
+      googleMapRef.current = new window.google.maps.Map(mapRef.current, {
+        center: { lat: 14.5764, lng: 121.0851 }, // Pasig City
+        zoom: 14,
+        mapTypeId: "roadmap",
+        styles: [
+          {
+            featureType: "poi",
+            elementType: "labels",
+            stylers: [{ visibility: "off" }],
+          },
+        ],
+        mapTypeControl: true,
+        streetViewControl: true,
+        fullscreenControl: true,
+        zoomControl: true,
+      });
 
-  if (loading || !user) {
+      infoWindowRef.current = new window.google.maps.InfoWindow();
+      console.log("✅ Google Maps initialized successfully");
+      setMapError(null);
+
+      // 🔥 Create markers after map is initialized
+      if (filteredObstacles.length > 0) {
+        createMarkers();
+      }
+    } catch (error) {
+      console.error("❌ Error initializing Google Maps:", error);
+      setMapError("Failed to initialize map. Please refresh the page.");
+    }
+  }, [filteredObstacles]); // Add filteredObstacles as dependency
+
+  // Load Google Maps script
+  const loadGoogleMapsScript = useCallback(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+    if (!apiKey) {
+      const error = "Google Maps API key not found in environment variables";
+      console.error("❌", error);
+      setMapError(error);
+      return;
+    }
+
+    // If google already available, initialize immediately
+    if (window.google && window.google.maps) {
+      console.log("🔁 Google Maps already loaded, initializing...");
+      initializeMap();
+      return;
+    }
+
+    // If a script already exists, attach load/error listeners to it
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src*="maps.googleapis.com"]'
+    );
+
+    if (existingScript) {
+      console.log("🔄 Google Maps script already exists — attaching listeners");
+      // Avoid attaching duplicate listeners
+      if (!existingScript.getAttribute("data-gmaps-listener")) {
+        existingScript.addEventListener("load", initializeMap);
+        existingScript.addEventListener("error", () => {
+          console.error("❌ Failed to load Google Maps (existing script)");
+          setMapError(
+            "Failed to load Google Maps. Please check your internet connection and API key."
+          );
+          scriptLoadedRef.current = false;
+        });
+        existingScript.setAttribute("data-gmaps-listener", "1");
+      }
+      return;
+    }
+
+    // Create and append script (no callback param)
+    console.log("📡 Loading Google Maps API script (onload)");
+    scriptLoadedRef.current = true;
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=visualization`;
+    script.async = true;
+    script.defer = true;
+
+    script.addEventListener("load", () => {
+      console.log("✅ Google Maps script loaded (onload)");
+      initializeMap();
+    });
+
+    script.addEventListener("error", () => {
+      console.error("❌ Failed to load Google Maps script (new script)");
+      setMapError(
+        "Failed to load Google Maps. Please check your internet connection and API key."
+      );
+      scriptLoadedRef.current = false;
+    });
+
+    document.head.appendChild(script);
+  }, [initializeMap]);
+
+  // Load script on mount
+  useEffect(() => {
+    loadGoogleMapsScript();
+
+    // Cleanup: only remove the specific load listener we attached (if any).
+    // We must use the same initializeMap reference for removeEventListener to work.
+    return () => {
+      const existingScript = document.querySelector<HTMLScriptElement>(
+        'script[src*="maps.googleapis.com"]'
+      );
+      if (
+        existingScript &&
+        existingScript.getAttribute("data-gmaps-listener")
+      ) {
+        existingScript.removeEventListener("load", initializeMap);
+        existingScript.removeAttribute("data-gmaps-listener");
+      }
+      // don't poke through window keys or delete initMap_... globally
+    };
+  }, [loadGoogleMapsScript, initializeMap]);
+
+  // Error state
+  if (mapError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center max-w-md">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">
+            Map Loading Error
+          </h2>
+          <p className="text-gray-600 mb-4">{mapError}</p>
+          <button
+            onClick={() => {
+              setMapError(null);
+              scriptLoadedRef.current = false;
+              loadGoogleMapsScript();
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            Retry Loading Map
+          </button>
+        </div>
       </div>
     );
   }
@@ -154,295 +384,80 @@ export default function AdminMapPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center space-x-4">
+      <div className="bg-white shadow-sm border-b">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <button
                 onClick={() => router.push("/dashboard")}
-                className="p-2 text-gray-400 hover:text-gray-600"
+                className="p-2 hover:bg-gray-100 rounded-lg"
               >
                 <ArrowLeftIcon className="h-5 w-5" />
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  🗺️ Interactive Map
+                  Interactive Accessibility Map
                 </h1>
-                <p className="text-sm text-gray-500">
-                  Visualize obstacles across Pasig City •{" "}
-                  {filteredObstacles.length} obstacles shown
-                </p>
-                <p className="text-xs text-blue-600 mt-1">
-                  📍 Simplified view - Click obstacles below to manage them
+                <p className="text-sm text-gray-600">
+                  Visualize and manage accessibility obstacles in Pasig City
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-600">
+                {obstaclesLoading
+                  ? "Loading obstacles..."
+                  : `${filteredObstacles.length} obstacles shown`}
+              </span>
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg"
               >
-                <FunnelIcon className="h-4 w-4 mr-2" />
+                <FunnelIcon className="h-4 w-4" />
                 Filters
               </button>
-              <button
-                onClick={loadObstacles}
-                className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-              >
-                🔄 Refresh
-              </button>
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Filters */}
-      {showFilters && (
-        <div className="bg-white border-b border-gray-200 px-4 py-4">
-          <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Search
-                </label>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search obstacles..."
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  value={filters.status}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      status: e.target.value as ObstacleStatus | "all",
-                    }))
-                  }
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="verified">Verified</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="false_report">False Report</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Severity
-                </label>
-                <select
-                  value={filters.severity}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      severity: e.target.value as ObstacleSeverity | "all",
-                    }))
-                  }
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                >
-                  <option value="all">All Severities</option>
-                  <option value="blocking">Blocking</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Type
-                </label>
-                <select
-                  value={filters.type}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      type: e.target.value as ObstacleType | "all",
-                    }))
-                  }
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                >
-                  <option value="all">All Types</option>
-                  <option value="vendor_blocking">Vendor Blocking</option>
-                  <option value="parked_vehicles">Parked Vehicles</option>
-                  <option value="construction">Construction</option>
-                  <option value="broken_pavement">Broken Pavement</option>
-                  <option value="flooding">Flooding</option>
-                  <option value="stairs_no_ramp">Stairs (No Ramp)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Map Container */}
+      <div className="relative">
+        <div
+          ref={mapRef}
+          className="w-full h-[calc(100vh-120px)]"
+          style={{ minHeight: "600px" }}
+        />
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {obstaclesLoading && (
-          <div className="bg-white rounded-lg shadow p-8 text-center mb-6">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading obstacles from Firebase...</p>
-          </div>
-        )}
-
-        {obstaclesError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center">
-              <ExclamationTriangleIcon className="h-5 w-5 text-red-600 mr-2" />
-              <span className="text-red-800">
-                Error loading obstacles: {obstaclesError}
-              </span>
+        {/* Loading overlay */}
+        {(!googleMapRef.current || obstaclesLoading) && (
+          <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-4 text-gray-600">
+                {!googleMapRef.current
+                  ? "Loading interactive map..."
+                  : "Loading obstacles..."}
+              </p>
             </div>
           </div>
         )}
 
-        {/* Map Placeholder with Obstacle Cards */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">
-              📍 Obstacle Locations
-            </h2>
-            <div className="text-sm text-gray-500">
-              Total: {firebaseObstacles.length} • Filtered:{" "}
-              {filteredObstacles.length}
+        {/* Firebase data status */}
+        {googleMapRef.current && !obstaclesLoading && (
+          <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-3 text-sm">
+            <div className="text-green-600 font-medium">
+              🔥 Firebase Connected
+            </div>
+            <div className="text-gray-600">
+              {firebaseObstacles.length} total obstacles
+            </div>
+            <div className="text-blue-600">
+              {filteredObstacles.length} shown on map
             </div>
           </div>
-
-          {/* Map simulation with cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredObstacles.map((obstacle) => (
-              <div
-                key={obstacle.id}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                      style={{ backgroundColor: getMarkerColor(obstacle) }}
-                    >
-                      {getMarkerIcon(obstacle.type)}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-sm">
-                        {obstacle.type.replace("_", " ").toUpperCase()}
-                      </h3>
-                      <span className="text-xs text-gray-500">
-                        {getStatusLabel(obstacle.status)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="text-sm text-gray-700 mb-3 line-clamp-2">
-                  {obstacle.description}
-                </p>
-
-                <div className="text-xs text-gray-500 mb-3">
-                  📍 {obstacle.location.latitude.toFixed(4)},{" "}
-                  {obstacle.location.longitude.toFixed(4)}
-                  <br />
-                  📅 {obstacle.reportedAt.toLocaleDateString()}
-                  <br />
-                  👍 {obstacle.upvotes} 👎 {obstacle.downvotes}
-                </div>
-
-                {obstacle.status === "pending" && (
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() =>
-                        handleObstacleAction(obstacle.id, "verified")
-                      }
-                      className="flex-1 bg-green-600 text-white py-1 px-2 rounded text-xs hover:bg-green-700"
-                    >
-                      ✅ Verify
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleObstacleAction(obstacle.id, "false_report")
-                      }
-                      className="flex-1 bg-red-600 text-white py-1 px-2 rounded text-xs hover:bg-red-700"
-                    >
-                      ❌ Reject
-                    </button>
-                  </div>
-                )}
-
-                {obstacle.status === "verified" && (
-                  <button
-                    onClick={() =>
-                      handleObstacleAction(obstacle.id, "resolved")
-                    }
-                    className="w-full bg-blue-600 text-white py-1 px-2 rounded text-xs hover:bg-blue-700"
-                  >
-                    🔧 Mark Resolved
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {filteredObstacles.length === 0 && !obstaclesLoading && (
-            <div className="text-center py-8 text-gray-500">
-              <div className="text-4xl mb-4">🗺️</div>
-              <p>No obstacles found for the selected criteria.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Statistics */}
-        <div className="bg-white rounded-lg shadow p-6 mt-6">
-          <h3 className="font-semibold text-gray-900 mb-4">Map Statistics</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {firebaseObstacles.length}
-              </div>
-              <div className="text-gray-500">Total</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {firebaseObstacles.filter((o) => o.status === "pending").length}
-              </div>
-              <div className="text-gray-500">Pending</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {
-                  firebaseObstacles.filter((o) => o.status === "verified")
-                    .length
-                }
-              </div>
-              <div className="text-gray-500">Verified</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {
-                  firebaseObstacles.filter((o) => o.status === "resolved")
-                    .length
-                }
-              </div>
-              <div className="text-gray-500">Resolved</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">
-                {
-                  firebaseObstacles.filter((o) => o.status === "false_report")
-                    .length
-                }
-              </div>
-              <div className="text-gray-500">False Reports</div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

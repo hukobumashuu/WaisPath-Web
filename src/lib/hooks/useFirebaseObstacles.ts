@@ -1,5 +1,5 @@
 // src/lib/hooks/useFirebaseObstacles.ts
-// FIXED: No more infinite loops, proper dependency management! 🔥💪
+// FIXED: Real Firebase connection with stable loading states
 
 "use client";
 
@@ -14,6 +14,15 @@ interface UseFirebaseObstaclesOptions {
   timeframeDays?: number;
 }
 
+interface ObstacleStats {
+  total: number;
+  pending: number;
+  verified: number;
+  resolved: number;
+  falseReports: number;
+  totalVotes: number;
+}
+
 export function useFirebaseObstacles(
   options: UseFirebaseObstaclesOptions = {},
   adminUserId: string = ""
@@ -21,7 +30,7 @@ export function useFirebaseObstacles(
   const [obstacles, setObstacles] = useState<AdminObstacle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<ObstacleStats>({
     total: 0,
     pending: 0,
     verified: 0,
@@ -30,33 +39,54 @@ export function useFirebaseObstacles(
     totalVotes: 0,
   });
 
-  // 🔥 FIX: Use refs to prevent infinite re-renders
+  // 🔥 FIX: Use refs to prevent dependency loops
   const hasLoadedRef = useRef(false);
+  const loadingRef = useRef(false);
   const optionsRef = useRef(options);
 
-  // Update options ref when they change
+  // Update options ref when options change
   useEffect(() => {
     optionsRef.current = options;
-  }, [
-    options.autoLoad,
-    options.limit,
-    options.timeframeDays,
-    JSON.stringify(options.status),
-  ]);
+  }, [options.autoLoad, options.limit, options.timeframeDays]);
 
-  // 🔥 FIX: Stable load function with proper dependencies
+  // Calculate stats when obstacles change
+  useEffect(() => {
+    const newStats = {
+      total: obstacles.length,
+      pending: obstacles.filter((o) => o.status === "pending").length,
+      verified: obstacles.filter((o) => o.status === "verified").length,
+      resolved: obstacles.filter((o) => o.status === "resolved").length,
+      falseReports: obstacles.filter((o) => o.status === "false_report").length,
+      totalVotes: obstacles.reduce(
+        (sum, o) => sum + o.upvotes + o.downvotes,
+        0
+      ),
+    };
+    setStats(newStats);
+  }, [obstacles]);
+
+  // 🔥 FIX: Stable load function with proper state management
   const loadObstacles = useCallback(async () => {
-    console.log("🔥 Loading obstacles - Starting...");
+    // Prevent concurrent loading
+    if (loadingRef.current) {
+      console.log("🔄 Already loading obstacles, skipping...");
+      return;
+    }
+
+    console.log("🔥 Loading obstacles from Firebase...");
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
 
     try {
-      console.log("📡 Attempting Firebase connection...");
+      console.log("📡 Testing Firebase connection...");
 
       // Test connection first
       const isConnected = await adminObstacleService.testConnection();
       if (!isConnected) {
-        throw new Error("Firebase connection failed");
+        throw new Error(
+          "Firebase connection failed - check console for details"
+        );
       }
 
       console.log("✅ Firebase connected, loading obstacles...");
@@ -64,7 +94,7 @@ export function useFirebaseObstacles(
       let loadedObstacles: AdminObstacle[];
 
       if (optionsRef.current.timeframeDays) {
-        // Load obstacles for specific timeframe (for reports)
+        // Load obstacles for specific timeframe
         loadedObstacles = await adminObstacleService.getObstaclesInTimeframe(
           optionsRef.current.timeframeDays
         );
@@ -82,34 +112,20 @@ export function useFirebaseObstacles(
       hasLoadedRef.current = true;
 
       console.log(
-        `✅ Loaded ${loadedObstacles.length} obstacles from Firebase`
+        `✅ Loaded ${loadedObstacles.length} real obstacles from Firebase`
       );
-
-      // Calculate stats
-      const newStats = {
-        total: loadedObstacles.length,
-        pending: loadedObstacles.filter((o) => o.status === "pending").length,
-        verified: loadedObstacles.filter((o) => o.status === "verified").length,
-        resolved: loadedObstacles.filter((o) => o.status === "resolved").length,
-        falseReports: loadedObstacles.filter((o) => o.status === "false_report")
-          .length,
-        totalVotes: loadedObstacles.reduce(
-          (sum, o) => sum + o.upvotes + o.downvotes,
-          0
-        ),
-      };
-      setStats(newStats);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to load obstacles";
       setError(errorMessage);
-      console.error("❌ Hook error loading obstacles:", err);
+      console.error("❌ Error loading obstacles:", err);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
-  }, []); // 🔥 FIX: Empty dependency array, use refs for options
+  }, []); // Empty dependency array to prevent loops
 
-  // 🔥 FIX: Stable update function
+  // 🔥 FIX: Update obstacle status
   const updateObstacleStatus = useCallback(
     async (
       obstacleId: string,
@@ -118,6 +134,8 @@ export function useFirebaseObstacles(
       adminNotes?: string
     ) => {
       try {
+        console.log(`🔄 Updating obstacle ${obstacleId} to ${status}...`);
+
         await adminObstacleService.updateObstacleStatus(
           obstacleId,
           status,
@@ -152,7 +170,7 @@ export function useFirebaseObstacles(
     []
   );
 
-  // 🔥 FIX: Test connection function
+  // Test connection function
   const testConnection = useCallback(async () => {
     try {
       return await adminObstacleService.testConnection();
@@ -162,30 +180,24 @@ export function useFirebaseObstacles(
     }
   }, []);
 
-  // 🔥 FIX: Controlled auto-load with proper conditions
+  // 🔥 FIX: One-time auto-load with stable conditions
   useEffect(() => {
-    console.log("🚀 Auto-loading obstacles...");
-    console.log("🔍 Hook State:", {
-      autoLoad: options.autoLoad,
-      hasLoaded: hasLoadedRef.current,
-      loading,
-      adminUserId,
-    });
-
     // Only auto-load if:
-    // 1. autoLoad is not explicitly false
+    // 1. autoLoad is enabled (default true)
     // 2. Haven't loaded yet
     // 3. Not currently loading
-    // 4. Have adminUserId (for authenticated calls)
+    // 4. Have adminUserId
     if (
       options.autoLoad !== false &&
       !hasLoadedRef.current &&
-      !loading &&
-      adminUserId
+      !loadingRef.current &&
+      adminUserId &&
+      adminUserId.trim() !== ""
     ) {
+      console.log("🚀 Auto-loading obstacles for admin:", adminUserId);
       loadObstacles();
     }
-  }, [options.autoLoad, adminUserId, loading, loadObstacles]);
+  }, [adminUserId, loadObstacles, options.autoLoad]);
 
   return {
     obstacles,

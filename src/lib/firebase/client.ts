@@ -1,44 +1,28 @@
 // src/lib/firebase/client.ts
-// Secure Firebase Client Configuration - No Hardcoded Keys
+// Fixed Firebase Client Configuration for Next.js
 
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import type { FirebaseApp } from "firebase/app";
-import type { Auth } from "firebase/auth";
-import type { Firestore } from "firebase/firestore";
+"use client";
 
-// Wait for environment variables to be available
-function waitForEnvVars(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const checkEnvVars = () => {
-      // Check if all required env vars are available
-      const hasAll = !!(
-        process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
-        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
-        process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
-        process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET &&
-        process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID &&
-        process.env.NEXT_PUBLIC_FIREBASE_APP_ID
-      );
+import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
-      if (hasAll) {
-        resolve(true);
-      } else {
-        // Wait a bit and check again (for hydration issues)
-        setTimeout(checkEnvVars, 100);
-      }
-    };
-
-    checkEnvVars();
-  });
+// Firebase configuration interface
+interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
 }
 
-// Get Firebase configuration from environment variables
-async function getFirebaseConfig() {
-  // Wait for environment variables to be ready
-  await waitForEnvVars();
-
+/**
+ * Get Firebase configuration from environment variables
+ * Works with Next.js environment variables
+ */
+function getFirebaseConfig(): FirebaseConfig {
+  // Use Next.js environment variables (NEXT_PUBLIC_*)
   const config = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -48,121 +32,109 @@ async function getFirebaseConfig() {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
   };
 
-  // Validate configuration
-  const requiredKeys = [
-    "apiKey",
-    "authDomain",
-    "projectId",
-    "storageBucket",
-    "messagingSenderId",
-    "appId",
-  ];
-
-  const missingKeys = requiredKeys.filter(
-    (key) => !config[key as keyof typeof config]
-  );
+  // Validate that all required config is present
+  const missingKeys = Object.entries(config)
+    .filter(([key, value]) => !value)
+    .map(([key]) => key);
 
   if (missingKeys.length > 0) {
-    console.error("❌ Missing Firebase configuration keys:", missingKeys);
-    throw new Error(
-      `Missing Firebase configuration: ${missingKeys.join(", ")}`
-    );
+    console.error("❌ Missing Firebase configuration:", missingKeys);
+    throw new Error(`Missing Firebase config: ${missingKeys.join(", ")}`);
   }
 
-  console.log("✅ Firebase config loaded securely from environment variables");
   return config;
 }
 
-// Initialize Firebase with proper async handling
-let app: FirebaseApp | null = null;
-let auth: Auth | null = null;
-let db: Firestore | null = null;
-let initPromise: Promise<FirebaseApp | null> | null = null;
+// Global Firebase instances
+let firebaseApp: FirebaseApp | null = null;
+let firebaseAuth: Auth | null = null;
+let firebaseDb: Firestore | null = null;
 
-async function initializeFirebase(): Promise<FirebaseApp | null> {
+/**
+ * Initialize Firebase app (singleton pattern)
+ */
+function initializeFirebaseApp(): FirebaseApp {
+  if (firebaseApp) {
+    return firebaseApp;
+  }
+
+  try {
+    // Check if Firebase is already initialized
+    const existingApps = getApps();
+    if (existingApps.length > 0) {
+      firebaseApp = existingApps[0];
+      console.log("🔥 Using existing Firebase app");
+      return firebaseApp;
+    }
+
+    // Initialize new Firebase app
+    const config = getFirebaseConfig();
+    firebaseApp = initializeApp(config);
+    console.log("🔥 Firebase app initialized successfully");
+    return firebaseApp;
+  } catch (error) {
+    console.error("❌ Firebase initialization failed:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get Firebase Auth instance
+ */
+export async function getFirebaseAuth(): Promise<Auth | null> {
   try {
     if (typeof window === "undefined") {
-      // Server-side rendering - don't initialize
+      console.warn("⚠️ Firebase Auth not available on server side");
       return null;
     }
 
-    if (app) {
-      // Already initialized
-      return app;
+    if (!firebaseAuth) {
+      const app = initializeFirebaseApp();
+      firebaseAuth = getAuth(app);
+      console.log("🔐 Firebase Auth initialized");
     }
 
-    // If already initializing, wait for that
-    if (initPromise) {
-      return initPromise;
-    }
-
-    // Start initialization
-    initPromise = (async () => {
-      try {
-        const config = await getFirebaseConfig();
-
-        // Initialize Firebase (only once)
-        if (getApps().length === 0) {
-          app = initializeApp(config);
-          console.log("🔥 Firebase app initialized securely");
-        } else {
-          app = getApps()[0];
-          console.log("🔥 Firebase app already exists");
-        }
-
-        // Initialize services
-        auth = getAuth(app);
-        db = getFirestore(app);
-
-        return app;
-      } catch (error) {
-        console.error("🔥 Firebase initialization failed:", error);
-        initPromise = null; // Reset so we can try again
-        return null;
-      }
-    })();
-
-    return initPromise;
+    return firebaseAuth;
   } catch (error) {
-    console.error("🔥 Firebase initialization error:", error);
-    initPromise = null;
+    console.error("❌ Firebase Auth initialization failed:", error);
     return null;
   }
 }
 
-// Async getters that wait for initialization
-export async function getFirebaseAuth(): Promise<Auth | null> {
-  if (!auth) {
-    await initializeFirebase();
-  }
-  return auth;
-}
-
+/**
+ * Get Firestore instance
+ */
 export async function getFirebaseDb(): Promise<Firestore | null> {
-  if (!db) {
-    await initializeFirebase();
+  try {
+    if (typeof window === "undefined") {
+      console.warn("⚠️ Firestore not available on server side");
+      return null;
+    }
+
+    if (!firebaseDb) {
+      const app = initializeFirebaseApp();
+      firebaseDb = getFirestore(app);
+      console.log("🗃️ Firestore initialized");
+    }
+
+    return firebaseDb;
+  } catch (error) {
+    console.error("❌ Firestore initialization failed:", error);
+    return null;
   }
-  return db;
 }
 
-export async function getFirebaseApp(): Promise<FirebaseApp | null> {
-  if (!app) {
-    return await initializeFirebase();
+/**
+ * Check if Firebase is properly configured
+ */
+export function isFirebaseConfigured(): boolean {
+  try {
+    getFirebaseConfig();
+    return true;
+  } catch {
+    return false;
   }
-  return app;
 }
 
-// Synchronous getters for backward compatibility (may return null during initialization)
-export function getFirebaseAuthSync(): Auth | null {
-  return auth;
-}
-
-export function getFirebaseDbSync(): Firestore | null {
-  return db;
-}
-
-// Export aliases
-export { getFirebaseAuthSync as auth, getFirebaseDbSync as db };
-
-// Default export
-export default getFirebaseApp;
+// Export the config getter for compatibility
+export { getFirebaseConfig };
