@@ -1,9 +1,9 @@
 // src/components/admin/PriorityDashboard.tsx
-// FIXED: Stable loading states, no rapid switching
+// ENHANCED: Better UI/UX with improved styling and resolved tracking
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { AdminObstacle, ObstacleStatus, ObstacleType } from "@/types/admin";
 import { useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
 import { useAdminAuth } from "@/lib/auth/firebase-auth";
@@ -32,7 +32,7 @@ interface PriorityObstacle extends AdminObstacle {
 
 interface DashboardStats {
   total: number;
-  critical: number;
+  resolved: number;
   high: number;
   medium: number;
   low: number;
@@ -156,37 +156,110 @@ class PriorityCalculator {
   }
 }
 
-// Stats Cards Component
+// Enhanced Stats Cards Component
 function PriorityStatsCards({ stats }: { stats: DashboardStats }) {
+  const statCards = [
+    {
+      label: "Resolved",
+      count: stats.resolved,
+      textColor: "text-green-700",
+      bgColor: "bg-gradient-to-br from-green-50 to-green-100",
+      borderColor: "border-green-200",
+      icon: "✅",
+      description: "Successfully addressed",
+    },
+    {
+      label: "High Priority",
+      count: stats.high,
+      textColor: "text-orange-700",
+      bgColor: "bg-gradient-to-br from-orange-50 to-orange-100",
+      borderColor: "border-orange-200",
+      icon: "⚠️",
+      description: "Address within weeks",
+    },
+    {
+      label: "Medium Priority",
+      count: stats.medium,
+      textColor: "text-blue-700",
+      bgColor: "bg-gradient-to-br from-blue-50 to-blue-100",
+      borderColor: "border-blue-200",
+      icon: "📋",
+      description: "Schedule for planning",
+    },
+    {
+      label: "Low Priority",
+      count: stats.low,
+      textColor: "text-gray-700",
+      bgColor: "bg-gradient-to-br from-gray-50 to-gray-100",
+      borderColor: "border-gray-200",
+      icon: "📝",
+      description: "Monitor and review",
+    },
+  ];
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-      {[
-        { label: "Critical", count: stats.critical, color: "red", icon: "🔥" },
-        { label: "High", count: stats.high, color: "orange", icon: "⚠️" },
-        { label: "Medium", count: stats.medium, color: "yellow", icon: "📋" },
-        { label: "Low", count: stats.low, color: "green", icon: "✅" },
-      ].map(({ label, count, color, icon }) => (
-        <div key={label} className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div
-              className={`w-12 h-12 bg-${color}-600 rounded-lg flex items-center justify-center text-white font-bold text-xl`}
-            >
-              {icon}
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">{label}</p>
-              <p className={`text-2xl font-semibold text-${color}-900`}>
-                {count}
+      {statCards.map(
+        ({
+          label,
+          count,
+          textColor,
+          bgColor,
+          borderColor,
+          icon,
+          description,
+        }) => (
+          <div
+            key={label}
+            className={`${bgColor} ${borderColor} border-2 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 p-6 relative overflow-hidden`}
+          >
+            {/* Background Pattern */}
+            <div className="absolute top-0 right-0 -mt-4 -mr-4 w-20 h-20 opacity-10 rounded-full bg-white"></div>
+
+            <div className="relative">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-4xl" role="img" aria-label={label}>
+                  {icon}
+                </span>
+                <div className="text-right">
+                  <p className={`text-3xl font-bold ${textColor}`}>{count}</p>
+                  <p className="text-sm font-medium text-gray-600">{label}</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {description}
               </p>
+
+              {/* Mini progress indicator */}
+              <div className="mt-4 h-1 bg-white bg-opacity-60 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-700 ease-out ${
+                    label === "Resolved"
+                      ? "bg-green-500"
+                      : label === "High Priority"
+                      ? "bg-orange-500"
+                      : label === "Medium Priority"
+                      ? "bg-blue-500"
+                      : "bg-gray-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (count / Math.max(stats.total, 1)) * 100
+                    )}%`,
+                  }}
+                ></div>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        )
+      )}
     </div>
   );
 }
 
-// Filter Tabs Component
+// Enhanced Filter Tabs Component
 function PriorityFilterTabs({
   activeFilter,
   onFilterChange,
@@ -202,53 +275,64 @@ function PriorityFilterTabs({
       label: "All",
       count: stats.total,
       color: "bg-gray-100 text-gray-800",
-    },
-    {
-      id: "critical",
-      label: "Critical",
-      count: stats.critical,
-      color: "bg-red-100 text-red-800",
+      activeColor: "bg-blue-100 text-blue-800 border-blue-500",
     },
     {
       id: "high",
-      label: "High",
+      label: "High Priority",
       count: stats.high,
       color: "bg-orange-100 text-orange-800",
+      activeColor: "bg-orange-100 text-orange-800 border-orange-500",
     },
     {
       id: "medium",
       label: "Medium",
       count: stats.medium,
-      color: "bg-yellow-100 text-yellow-800",
+      color: "bg-blue-100 text-blue-800",
+      activeColor: "bg-blue-100 text-blue-800 border-blue-500",
     },
     {
       id: "low",
       label: "Low",
       count: stats.low,
+      color: "bg-gray-100 text-gray-800",
+      activeColor: "bg-gray-100 text-gray-800 border-gray-500",
+    },
+    {
+      id: "resolved",
+      label: "Resolved",
+      count: stats.resolved,
       color: "bg-green-100 text-green-800",
+      activeColor: "bg-green-100 text-green-800 border-green-500",
     },
   ];
 
   return (
-    <div className="mb-6">
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+    <div className="mb-8">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+        <nav className="flex space-x-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onFilterChange(tab.id)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeFilter === tab.id
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  ? `${tab.activeColor} shadow-md transform scale-105`
+                  : "text-gray-600 hover:text-gray-800 hover:bg-gray-50"
               }`}
             >
-              {tab.label}
-              <span
-                className={`ml-2 px-2 py-1 rounded-full text-xs ${tab.color}`}
-              >
-                {tab.count}
-              </span>
+              <div className="flex items-center justify-center space-x-2">
+                <span>{tab.label}</span>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-bold ${
+                    activeFilter === tab.id
+                      ? "bg-white bg-opacity-30"
+                      : tab.color
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </div>
             </button>
           ))}
         </nav>
@@ -257,115 +341,223 @@ function PriorityFilterTabs({
   );
 }
 
-// Obstacle Card Component
+// Enhanced Obstacle Card Component
 function PriorityObstacleCard({
   obstacle,
   rank,
   onVerify,
   onReject,
+  onRevertToPending,
+  showConfirmDialog,
 }: {
   obstacle: PriorityObstacle;
   rank: number;
   onVerify: (id: string) => void;
   onReject: (id: string) => void;
+  onRevertToPending: (id: string) => void;
+  showConfirmDialog: (
+    type: "review" | "plan",
+    obstacleId: string,
+    obstacleTitle: string
+  ) => void;
 }) {
   const getCategoryColor = (category: string) => {
     const colors = {
-      CRITICAL: "bg-red-100 text-red-800 border-red-200",
-      HIGH: "bg-orange-100 text-orange-800 border-orange-200",
-      MEDIUM: "bg-yellow-100 text-yellow-800 border-yellow-200",
-      LOW: "bg-green-100 text-green-800 border-green-200",
+      CRITICAL: "bg-red-100 text-red-800 border-red-300",
+      HIGH: "bg-orange-100 text-orange-800 border-orange-300",
+      MEDIUM: "bg-blue-100 text-blue-800 border-blue-300",
+      LOW: "bg-gray-100 text-gray-800 border-gray-300",
     };
     return colors[category as keyof typeof colors] || colors.LOW;
   };
 
+  const renderActionButtons = () => {
+    if (obstacle.status === "verified") {
+      return (
+        <div className="flex flex-col space-y-3">
+          <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-800 rounded-xl border-2 border-blue-200 text-sm font-medium text-center">
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-lg">👁️</span>
+              <span>Under Review</span>
+            </div>
+          </div>
+
+          {/* Revert button for verified status */}
+          <button
+            onClick={() => onRevertToPending(obstacle.id)}
+            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 text-xs font-medium"
+          >
+            <div className="flex items-center justify-center space-x-1">
+              <span>↩️</span>
+              <span>Revert to Pending</span>
+            </div>
+          </button>
+        </div>
+      );
+    }
+
+    if (obstacle.status === "resolved") {
+      return (
+        <div className="flex flex-col space-y-3">
+          <div className="px-4 py-3 bg-gradient-to-r from-green-50 to-green-100 text-green-800 rounded-xl border-2 border-green-200 text-sm font-medium text-center">
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-lg">✅</span>
+              <span>Resolved</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (obstacle.status === "false_report") {
+      return (
+        <div className="flex flex-col space-y-3">
+          <div className="px-4 py-3 bg-gradient-to-r from-purple-50 to-purple-100 text-purple-800 rounded-xl border-2 border-purple-200 text-sm font-medium text-center">
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-lg">📅</span>
+              <span>Planned</span>
+            </div>
+          </div>
+
+          {/* Revert button for false_report status */}
+          <button
+            onClick={() => onRevertToPending(obstacle.id)}
+            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-200 text-xs font-medium"
+          >
+            <div className="flex items-center justify-center space-x-1">
+              <span>↩️</span>
+              <span>Revert to Pending</span>
+            </div>
+          </button>
+        </div>
+      );
+    }
+
+    // Enhanced pending status buttons with modal confirmation
+    return (
+      <div className="flex flex-col space-y-3">
+        <button
+          onClick={() =>
+            showConfirmDialog(
+              "review",
+              obstacle.id,
+              obstacle.type.replace("_", " ").toUpperCase()
+            )
+          }
+          className="group relative px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 text-sm font-medium"
+        >
+          <div className="flex items-center justify-center space-x-2">
+            <span className="text-lg">👁️</span>
+            <span>Mark Under Review</span>
+          </div>
+          <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-xl transition-opacity duration-200"></div>
+        </button>
+
+        <button
+          onClick={() =>
+            showConfirmDialog(
+              "plan",
+              obstacle.id,
+              obstacle.type.replace("_", " ").toUpperCase()
+            )
+          }
+          className="group relative px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 text-sm font-medium"
+        >
+          <div className="flex items-center justify-center space-x-2">
+            <span className="text-lg">📅</span>
+            <span>Plan for Resolution</span>
+          </div>
+          <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-xl transition-opacity duration-200"></div>
+        </button>
+
+        <div className="text-xs text-gray-500 text-center mt-2">
+          Priority: {obstacle.priorityResult.category}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+          <div className="flex items-center space-x-4 mb-4">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center text-white font-bold text-lg shadow-lg">
               #{rank}
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
                 {obstacle.type.replace("_", " ").toUpperCase()}
               </h3>
-              <div className="flex items-center space-x-2 mt-1">
+              <div className="flex items-center space-x-3">
+                {/* REMOVED SCORE - Just show priority category */}
                 <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium border ${getCategoryColor(
+                  className={`px-4 py-2 rounded-xl text-sm font-bold border-2 ${getCategoryColor(
                     obstacle.priorityResult.category
                   )}`}
                 >
-                  {obstacle.priorityResult.category} (
-                  {obstacle.priorityResult.score}/100)
+                  {obstacle.priorityResult.category} PRIORITY
                 </span>
               </div>
             </div>
           </div>
 
-          <p className="text-gray-700 mb-4">{obstacle.description}</p>
+          <p className="text-gray-700 mb-6 text-lg leading-relaxed">
+            {obstacle.description}
+          </p>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
-            <div>📅 {obstacle.reportedAt.toLocaleDateString()}</div>
-            <div>👤 User #{obstacle.reportedBy.slice(-4)}</div>
-            <div>
-              👍 {obstacle.upvotes} 👎 {obstacle.downvotes}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-6">
+            <div className="flex items-center space-x-2">
+              <span>📅</span>
+              <span>{obstacle.reportedAt.toLocaleDateString()}</span>
             </div>
-            <div>
-              📍 {obstacle.location.latitude.toFixed(4)},{" "}
-              {obstacle.location.longitude.toFixed(4)}
+            <div className="flex items-center space-x-2">
+              <span>👤</span>
+              <span>User #{obstacle.reportedBy.slice(-4)}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span>👍 {obstacle.upvotes}</span>
+              <span>👎 {obstacle.downvotes}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span>📍</span>
+              <span>
+                {obstacle.location.latitude.toFixed(4)},{" "}
+                {obstacle.location.longitude.toFixed(4)}
+              </span>
             </div>
           </div>
 
-          <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-400">
-            <div className="font-medium text-blue-800">
-              💡 Recommended Action:
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border-l-4 border-blue-400">
+            <div className="font-bold text-blue-900 mb-2 flex items-center space-x-2">
+              <span>💡</span>
+              <span>Recommended Action:</span>
             </div>
-            <div className="text-blue-700 text-sm">
+            <div className="text-blue-800 text-sm leading-relaxed">
               {obstacle.priorityResult.recommendation}
             </div>
           </div>
         </div>
 
-        <div className="ml-6 flex flex-col space-y-2">
-          {obstacle.status === "pending" && (
-            <>
-              <button
-                onClick={() => onVerify(obstacle.id)}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-              >
-                ✅ Verify
-              </button>
-              <button
-                onClick={() => onReject(obstacle.id)}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-              >
-                ❌ Reject
-              </button>
-            </>
-          )}
-          {obstacle.status === "verified" && (
-            <div className="text-center py-2 px-4 bg-green-100 text-green-800 rounded text-sm">
-              ✅ Verified
-            </div>
-          )}
-          {obstacle.status === "resolved" && (
-            <div className="text-center py-2 px-4 bg-blue-100 text-blue-800 rounded text-sm">
-              🔧 Resolved
-            </div>
-          )}
-        </div>
+        <div className="ml-8">{renderActionButtons()}</div>
       </div>
     </div>
   );
 }
 
-// 🔥 MAIN COMPONENT: Fixed with stable states
+// 🔥 MAIN COMPONENT: Enhanced with better UI
 export default function PriorityDashboard() {
   const { user } = useAdminAuth();
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [priorityCalculator] = useState(() => new PriorityCalculator());
+
+  // Modal state for confirmations
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: "review" | "plan";
+    obstacleId: string;
+    obstacleTitle: string;
+  } | null>(null);
 
   // 🔥 FIX: Use real Firebase data
   const {
@@ -395,14 +587,16 @@ export default function PriorityDashboard() {
     return processed;
   }, [firebaseObstacles, priorityCalculator]);
 
-  // 🔥 FIX: Calculate stats from prioritized obstacles
+  // 🔥 UPDATED: Calculate stats with resolved instead of critical
   const stats = useMemo(() => {
     const total = prioritizedObstacles.length;
-    const critical = prioritizedObstacles.filter(
-      (o) => o.priorityResult.category === "CRITICAL"
+    const resolved = prioritizedObstacles.filter(
+      (o) => o.status === "resolved"
     ).length;
     const high = prioritizedObstacles.filter(
-      (o) => o.priorityResult.category === "HIGH"
+      (o) =>
+        o.priorityResult.category === "HIGH" ||
+        o.priorityResult.category === "CRITICAL"
     ).length;
     const medium = prioritizedObstacles.filter(
       (o) => o.priorityResult.category === "MEDIUM"
@@ -410,19 +604,31 @@ export default function PriorityDashboard() {
     const low = prioritizedObstacles.filter(
       (o) => o.priorityResult.category === "LOW"
     ).length;
-    const urgentCount = critical + high;
+    const urgentCount = high;
     const totalScore = prioritizedObstacles.reduce(
       (sum, o) => sum + o.priorityResult.score,
       0
     );
     const avgScore = total > 0 ? Math.round(totalScore / total) : 0;
 
-    return { total, critical, high, medium, low, urgentCount, avgScore };
+    return { total, resolved, high, medium, low, urgentCount, avgScore };
   }, [prioritizedObstacles]);
 
-  // 🔥 FIX: Filter obstacles without causing state loops
+  // 🔥 UPDATED: Filter logic with resolved filter
   const filteredObstacles = useMemo(() => {
     if (activeFilter === "all") return prioritizedObstacles;
+    if (activeFilter === "resolved") {
+      return prioritizedObstacles.filter(
+        (obstacle) => obstacle.status === "resolved"
+      );
+    }
+    if (activeFilter === "high") {
+      return prioritizedObstacles.filter(
+        (obstacle) =>
+          obstacle.priorityResult.category === "HIGH" ||
+          obstacle.priorityResult.category === "CRITICAL"
+      );
+    }
     return prioritizedObstacles.filter(
       (obstacle) =>
         obstacle.priorityResult.category.toLowerCase() === activeFilter
@@ -436,12 +642,12 @@ export default function PriorityDashboard() {
         obstacleId,
         "verified",
         user?.uid || "",
-        "Verified via Priority Dashboard"
+        "Marked as Under Review via Priority Dashboard"
       );
-      console.log(`✅ Verified obstacle ${obstacleId}`);
+      console.log(`✅ Marked under review: ${obstacleId}`);
     } catch (error) {
-      console.error("❌ Error verifying obstacle:", error);
-      alert("Failed to verify obstacle. Please try again.");
+      console.error("❌ Error updating obstacle:", error);
+      alert("Failed to update obstacle. Please try again.");
     }
   };
 
@@ -451,22 +657,66 @@ export default function PriorityDashboard() {
         obstacleId,
         "false_report",
         user?.uid || "",
-        "Rejected via Priority Dashboard"
+        "Planned for Resolution via Priority Dashboard"
       );
-      console.log(`❌ Rejected obstacle ${obstacleId}`);
+      console.log(`📅 Planned for resolution: ${obstacleId}`);
     } catch (error) {
-      console.error("❌ Error rejecting obstacle:", error);
-      alert("Failed to reject obstacle. Please try again.");
+      console.error("❌ Error updating obstacle:", error);
+      alert("Failed to update obstacle. Please try again.");
     }
   };
 
-  // Loading state
+  // Add reversion handler
+  const handleRevertToPending = async (obstacleId: string) => {
+    try {
+      await updateObstacleStatus(
+        obstacleId,
+        "pending",
+        user?.uid || "",
+        "Reverted to Pending via Priority Dashboard"
+      );
+      console.log(`↩️ Reverted to pending: ${obstacleId}`);
+    } catch (error) {
+      console.error("❌ Error reverting obstacle:", error);
+      alert("Failed to revert obstacle. Please try again.");
+    }
+  };
+
+  // Modal handlers
+  const handleConfirmAction = () => {
+    if (!confirmAction) return;
+
+    if (confirmAction.type === "review") {
+      handleVerify(confirmAction.obstacleId);
+    } else if (confirmAction.type === "plan") {
+      handleReject(confirmAction.obstacleId);
+    }
+
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+  };
+
+  const handleCancelAction = () => {
+    setShowConfirmModal(false);
+    setConfirmAction(null);
+  };
+
+  const showConfirmDialog = (
+    type: "review" | "plan",
+    obstacleId: string,
+    obstacleTitle: string
+  ) => {
+    setConfirmAction({ type, obstacleId, obstacleTitle });
+    setShowConfirmModal(true);
+  };
+
+  // Enhanced Loading state
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <div className="text-xl font-semibold mb-2">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-6"></div>
+          <div className="text-2xl font-bold text-gray-900 mb-2">
             🔄 Loading Priority Analysis...
           </div>
           <div className="text-gray-600">
@@ -477,18 +727,19 @@ export default function PriorityDashboard() {
     );
   }
 
-  // Error state
+  // Enhanced Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="text-xl font-semibold mb-2 text-red-600">
-            ❌ Error Loading Data
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-red-50 to-pink-100">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="text-6xl mb-4">❌</div>
+          <div className="text-2xl font-bold mb-4 text-red-600">
+            Error Loading Data
           </div>
-          <div className="text-gray-600 mb-4">{error}</div>
+          <div className="text-gray-600 mb-6">{error}</div>
           <button
             onClick={() => loadObstacles()}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            className="bg-red-600 text-white px-6 py-3 rounded-xl hover:bg-red-700 transition-colors font-medium"
           >
             🔄 Retry
           </button>
@@ -497,19 +748,19 @@ export default function PriorityDashboard() {
     );
   }
 
-  // No data state
+  // Enhanced No data state
   if (prioritizedObstacles.length === 0) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-center">
-          <div className="text-6xl mb-4">📊</div>
-          <div className="text-xl font-semibold mb-2">No Obstacles Found</div>
-          <div className="text-gray-600 mb-4">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 to-blue-100">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="text-8xl mb-6">📊</div>
+          <div className="text-2xl font-bold mb-4">No Obstacles Found</div>
+          <div className="text-gray-600 mb-6">
             No accessibility obstacles in the database yet.
           </div>
           <button
             onClick={() => loadObstacles()}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium"
           >
             🔄 Refresh
           </button>
@@ -519,55 +770,152 @@ export default function PriorityDashboard() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          🎯 Priority Dashboard
-        </h1>
-        <p className="text-gray-600">
-          Real-time obstacles ranked by rule-based priority algorithm • Urgent
-          items: {stats.urgentCount} • Average score: {stats.avgScore}/100
-        </p>
-        <div className="mt-2 text-sm text-blue-600">
-          🔥 Connected to Firebase • {firebaseObstacles.length} obstacles loaded
-          from waispath-4dbf1
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">
+            🎯 Priority Dashboard
+          </h1>
         </div>
-      </div>
 
-      <PriorityStatsCards stats={stats} />
-      <PriorityFilterTabs
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-        stats={stats}
-      />
+        <PriorityStatsCards stats={stats} />
+        <PriorityFilterTabs
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
+          stats={stats}
+        />
 
-      <div className="space-y-4">
-        {filteredObstacles.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            No obstacles found for selected priority level.
+        <div className="space-y-6">
+          {filteredObstacles.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
+              <div className="text-6xl mb-4">🔍</div>
+              <div className="text-xl font-medium text-gray-600">
+                No obstacles found for selected priority level.
+              </div>
+            </div>
+          ) : (
+            filteredObstacles.map((obstacle) => (
+              <PriorityObstacleCard
+                key={obstacle.id}
+                obstacle={obstacle}
+                rank={
+                  prioritizedObstacles.findIndex((o) => o.id === obstacle.id) +
+                  1
+                }
+                onVerify={handleVerify}
+                onReject={handleReject}
+                onRevertToPending={handleRevertToPending}
+                showConfirmDialog={showConfirmDialog}
+              />
+            ))
+          )}
+        </div>
+
+        <div className="mt-8 p-6 bg-white rounded-2xl shadow-lg border border-gray-200">
+          <div className="text-sm text-gray-600 leading-relaxed">
+            <strong>
+              Showing {filteredObstacles.length} of {stats.total} obstacles
+            </strong>{" "}
+            • Priority algorithm: Severity (40%) + Community (30%) +
+            Infrastructure (20%) + Admin (10%) • 🔥 Live Firebase data from your
+            mobile app
           </div>
-        ) : (
-          filteredObstacles.map((obstacle) => (
-            <PriorityObstacleCard
-              key={obstacle.id}
-              obstacle={obstacle}
-              rank={
-                prioritizedObstacles.findIndex((o) => o.id === obstacle.id) + 1
-              }
-              onVerify={handleVerify}
-              onReject={handleReject}
-            />
-          ))
-        )}
-      </div>
-
-      <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-        <div className="text-sm text-gray-600">
-          Showing {filteredObstacles.length} of {stats.total} obstacles •
-          Priority algorithm: Severity (40%) + Community (30%) + Infrastructure
-          (20%) + Admin (10%) • 🔥 Live Firebase data from your mobile app
         </div>
       </div>
+
+      {/* Enhanced Confirmation Modal */}
+      {showConfirmModal && confirmAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+            {/* Modal Header */}
+            <div
+              className={`p-6 ${
+                confirmAction.type === "review"
+                  ? "bg-gradient-to-r from-blue-50 to-blue-100"
+                  : "bg-gradient-to-r from-purple-50 to-purple-100"
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <div
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    confirmAction.type === "review"
+                      ? "bg-blue-600"
+                      : "bg-purple-600"
+                  } text-white text-xl`}
+                >
+                  {confirmAction.type === "review" ? "👁️" : "📅"}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {confirmAction.type === "review"
+                      ? "Mark Under Review"
+                      : "Plan for Resolution"}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {confirmAction.obstacleTitle}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <div className="mb-6">
+                <p className="text-gray-700 leading-relaxed">
+                  {confirmAction.type === "review"
+                    ? "This will mark the obstacle as 'Under Review' and change its status for tracking purposes. You can revert this action later if needed."
+                    : "This will mark the obstacle as 'Planned for Resolution' and change its status for tracking purposes. You can revert this action later if needed."}
+                </p>
+              </div>
+
+              <div
+                className={`p-4 rounded-xl ${
+                  confirmAction.type === "review"
+                    ? "bg-blue-50 border-l-4 border-blue-400"
+                    : "bg-purple-50 border-l-4 border-purple-400"
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <span className="text-lg">💡</span>
+                  <span
+                    className={`font-medium ${
+                      confirmAction.type === "review"
+                        ? "text-blue-900"
+                        : "text-purple-900"
+                    }`}
+                  >
+                    {confirmAction.type === "review"
+                      ? "This obstacle will be tracked as actively being reviewed by the team."
+                      : "This obstacle will be added to the resolution planning queue."}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 bg-gray-50 flex space-x-3">
+              <button
+                onClick={handleCancelAction}
+                className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 transition-colors duration-200 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmAction}
+                className={`flex-1 px-4 py-3 text-white rounded-xl transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 ${
+                  confirmAction.type === "review"
+                    ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                    : "bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
+                }`}
+              >
+                {confirmAction.type === "review"
+                  ? "Mark Under Review"
+                  : "Plan for Resolution"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

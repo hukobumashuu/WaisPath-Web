@@ -56,15 +56,16 @@ export default function AdminDashboard() {
   // Dashboard cards
   const dashboardCards: DashboardCard[] = [
     {
-      title: "🎯 Priority Analysis",
-      description: "AI-powered obstacle priority ranking and urgent alerts",
+      title: "Priority Analysis",
+      description:
+        "Smart obstacle prioritization with community validation weighting",
       href: "/dashboard/priority",
       icon: FireIcon,
       status: "Ready",
       color: "border-red-200 bg-red-50",
     },
     {
-      title: "📊 LGU Reports",
+      title: "LGU Reports",
       description:
         "Generate accessibility compliance reports for local government",
       href: "/dashboard/reports",

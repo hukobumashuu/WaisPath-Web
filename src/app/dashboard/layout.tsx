@@ -43,13 +43,13 @@ export default function DashboardLayout({
       current: pathname === "/dashboard",
     },
     {
-      name: "🎯 Priority Analysis",
+      name: "Priority Analysis",
       href: "/dashboard/priority",
       icon: FireIcon,
       current: pathname === "/dashboard/priority",
     },
     {
-      name: "📊 LGU Reports",
+      name: "LGU Reports",
       href: "/dashboard/reports",
       icon: DocumentChartBarIcon,
       current: pathname === "/dashboard/reports",
@@ -65,12 +65,6 @@ export default function DashboardLayout({
       href: "/dashboard/map",
       icon: MapPinIcon,
       current: pathname === "/dashboard/map",
-    },
-    {
-      name: "Analytics",
-      href: "/dashboard/analytics",
-      icon: ChartBarIcon,
-      current: pathname === "/dashboard/analytics",
     },
     {
       name: "Settings",
@@ -142,7 +136,7 @@ export default function DashboardLayout({
               Logged in as: <span className="font-medium">{user.email}</span>
             </div>
             <div className="text-xs text-green-600 mt-1">
-              🔥 Firebase Connected • Rule Engine Active
+              Firebase Connected • Rule Engine Active
             </div>
           </div>
         </div>
