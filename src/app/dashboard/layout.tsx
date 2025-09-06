@@ -49,7 +49,7 @@ export default function DashboardLayout({
       current: pathname === "/dashboard/priority",
     },
     {
-      name: "LGU Reports",
+      name: "Admin Report",
       href: "/dashboard/reports",
       icon: DocumentChartBarIcon,
       current: pathname === "/dashboard/reports",
@@ -100,9 +100,7 @@ export default function DashboardLayout({
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200">
           {/* Logo/Brand */}
           <div className="flex items-center px-6 py-4 border-b border-gray-200">
-            <h1 className="text-xl font-bold text-gray-900">
-              🔥 WAISPATH Admin
-            </h1>
+            <h1 className="text-xl font-bold text-gray-900">WAISPATH Admin</h1>
           </div>
 
           {/* Navigation */}

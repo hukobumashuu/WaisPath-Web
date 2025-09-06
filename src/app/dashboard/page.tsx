@@ -65,7 +65,7 @@ export default function AdminDashboard() {
       color: "border-red-200 bg-red-50",
     },
     {
-      title: "LGU Reports",
+      title: "Admin Reports",
       description:
         "Generate accessibility compliance reports for local government",
       href: "/dashboard/reports",
@@ -89,14 +89,6 @@ export default function AdminDashboard() {
       status: "Ready",
       color: "border-green-200 bg-green-50",
     },
-    {
-      title: "Analytics",
-      description: "View comprehensive analytics and usage statistics",
-      href: "/dashboard/analytics",
-      icon: ChartBarIcon,
-      status: "Ready",
-      color: "border-orange-200 bg-orange-50",
-    },
   ];
 
   return (
@@ -107,7 +99,7 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between py-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                🔥 WAISPATH Admin Dashboard
+                WAISPATH Admin Dashboard
               </h1>
               <p className="text-sm text-gray-500 flex items-center space-x-2">
                 <span>Intelligent Accessibility Management for Pasig City</span>

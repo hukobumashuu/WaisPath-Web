@@ -586,7 +586,7 @@ Priority Algorithm: Severity (40%) + Community (30%) + Infrastructure (20%) + Ad
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          📊 LGU Report Generator
+          📊 Admin Report Generator
         </h1>
         <p className="text-gray-600">
           Generate evidence-based accessibility improvement reports for local
