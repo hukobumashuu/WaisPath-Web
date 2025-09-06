@@ -43,20 +43,22 @@ const ADMIN_PERMISSIONS = {
 const ADMIN_ROLES = {
   super_admin: {
     name: "Super Administrator",
-    permissions: Object.keys(ADMIN_PERMISSIONS), // All permissions
+    permissions: Object.keys(ADMIN_PERMISSIONS),
   },
-  moderator: {
-    name: "Content Moderator",
+  lgu_admin: {
+    name: "LGU Administrator",
     permissions: [
       "obstacles:read",
       "obstacles:approve",
+      "obstacles:delete",
       "users:read",
-      "analytics:read",
+      "users:manage",
+      "admins:create_field",
     ],
   },
-  viewer: {
-    name: "Read-Only Viewer",
-    permissions: ["obstacles:read", "users:read", "analytics:read"],
+  field_admin: {
+    name: "Field Administrator",
+    permissions: ["obstacles:read", "obstacles:approve", "users:read"],
   },
 };
 

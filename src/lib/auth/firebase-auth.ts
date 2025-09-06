@@ -1,5 +1,5 @@
 // src/lib/auth/firebase-auth.ts
-// FIXED: Single global auth state, no multiple listeners
+// FIXED: Prevents infinite re-render loops
 
 "use client";
 
@@ -10,9 +10,9 @@ import {
   type User,
 } from "firebase/auth";
 import { getFirebaseAuth } from "../firebase/client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
-// Admin user interface
+// Admin user interface with updated roles
 export interface AdminUser {
   uid: string;
   email: string | null;
@@ -20,15 +20,15 @@ export interface AdminUser {
   isAdmin: boolean;
   customClaims: {
     admin?: boolean;
-    role?: "super_admin" | "moderator" | "viewer";
+    role?: "super_admin" | "lgu_admin" | "field_admin" | "moderator" | "viewer";
     permissions?: string[];
   };
 }
 
-// Custom claims interface
+// Custom claims interface with updated roles
 interface FirebaseCustomClaims {
   admin?: boolean;
-  role?: "super_admin" | "moderator" | "viewer";
+  role?: "super_admin" | "lgu_admin" | "field_admin" | "moderator" | "viewer";
   permissions?: string[];
   [key: string]: unknown;
 }
@@ -44,79 +44,94 @@ let globalAuthState: {
   initialized: false,
 };
 
-let globalListeners: ((state: typeof globalAuthState) => void)[] = [];
+const globalListeners: Set<(state: typeof globalAuthState) => void> = new Set();
 let authUnsubscribe: (() => void) | null = null;
+let initializationPromise: Promise<void> | null = null;
 
 // Initialize auth once globally
-async function initializeGlobalAuth() {
-  if (globalAuthState.initialized) return;
+async function initializeGlobalAuth(): Promise<void> {
+  // Prevent multiple initializations
+  if (initializationPromise) {
+    return initializationPromise;
+  }
 
-  try {
-    console.log("🔐 Initializing global Firebase Auth...");
-    const auth = await getFirebaseAuth();
+  initializationPromise = (async () => {
+    if (globalAuthState.initialized) return;
 
-    if (!auth) {
-      console.error("❌ Firebase Auth not available");
-      globalAuthState.loading = false;
-      notifyGlobalListeners();
-      return;
-    }
+    try {
+      console.log("🔐 Initializing global Firebase Auth...");
+      const auth = await getFirebaseAuth();
 
-    // Single auth state listener
-    authUnsubscribe = onAuthStateChanged(
-      auth,
-      async (user: User | null) => {
-        console.log("🔄 Global auth state changed:", user?.email || "no user");
+      if (!auth) {
+        console.error("❌ Firebase Auth not available");
+        globalAuthState.loading = false;
+        globalAuthState.initialized = true;
+        notifyGlobalListeners();
+        return;
+      }
 
-        if (user) {
-          try {
-            const tokenResult = await user.getIdTokenResult();
-            const customClaims = tokenResult.claims as FirebaseCustomClaims;
+      // Single auth state listener
+      authUnsubscribe = onAuthStateChanged(
+        auth,
+        async (user: User | null) => {
+          console.log(
+            "🔄 Global auth state changed:",
+            user?.email || "no user"
+          );
 
-            globalAuthState.user = {
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName,
-              isAdmin: customClaims.admin === true,
-              customClaims: {
-                admin: customClaims.admin,
+          if (user) {
+            try {
+              const tokenResult = await user.getIdTokenResult();
+              const customClaims = tokenResult.claims as FirebaseCustomClaims;
+
+              globalAuthState.user = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName,
+                isAdmin: customClaims.admin === true,
+                customClaims: {
+                  admin: customClaims.admin,
+                  role: customClaims.role,
+                  permissions: customClaims.permissions,
+                },
+              };
+
+              console.log("✅ User authenticated globally:", {
+                email: user.email,
+                isAdmin: globalAuthState.user.isAdmin,
                 role: customClaims.role,
-                permissions: customClaims.permissions,
-              },
-            };
-
-            console.log("✅ User authenticated globally:", {
-              email: user.email,
-              isAdmin: globalAuthState.user.isAdmin,
-              role: customClaims.role,
-            });
-          } catch (error) {
-            console.error("❌ Error processing user token:", error);
+              });
+            } catch (error) {
+              console.error("❌ Error processing user token:", error);
+              globalAuthState.user = null;
+            }
+          } else {
+            console.log("👤 No user signed in globally");
             globalAuthState.user = null;
           }
-        } else {
-          console.log("👤 No user signed in globally");
+
+          globalAuthState.loading = false;
+          notifyGlobalListeners();
+        },
+        (error) => {
+          console.error("❌ Global auth state change error:", error);
           globalAuthState.user = null;
+          globalAuthState.loading = false;
+          notifyGlobalListeners();
         }
+      );
 
-        globalAuthState.loading = false;
-        notifyGlobalListeners();
-      },
-      (error) => {
-        console.error("❌ Global auth state change error:", error);
-        globalAuthState.user = null;
-        globalAuthState.loading = false;
-        notifyGlobalListeners();
-      }
-    );
+      globalAuthState.initialized = true;
+      console.log("✅ Global Firebase Auth initialized");
+    } catch (error) {
+      console.error("❌ Global auth initialization failed:", error);
+      globalAuthState.loading = false;
+      globalAuthState.initialized = true;
+      notifyGlobalListeners();
+    }
+  })();
 
-    globalAuthState.initialized = true;
-    console.log("✅ Global Firebase Auth initialized");
-  } catch (error) {
-    console.error("❌ Global auth initialization failed:", error);
-    globalAuthState.loading = false;
-    notifyGlobalListeners();
-  }
+  return initializationPromise;
 }
 
 function notifyGlobalListeners() {
@@ -135,14 +150,12 @@ async function signIn(
   password: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    console.log("🔐 Attempting sign in for:", email);
     const auth = await getFirebaseAuth();
-
     if (!auth) {
       return {
         success: false,
         error:
-          "Authentication service not available. Please refresh and try again.",
+          "Firebase Auth not ready. Please refresh the page and try again.",
       };
     }
 
@@ -153,7 +166,7 @@ async function signIn(
     );
     const user = userCredential.user;
 
-    // Check if user has admin privileges
+    // Check if user has admin claims
     const tokenResult = await user.getIdTokenResult();
     const claims = tokenResult.claims as FirebaseCustomClaims;
     const isAdmin = claims.admin === true;
@@ -162,17 +175,16 @@ async function signIn(
       await signOut();
       return {
         success: false,
-        error: "Access denied. This account does not have admin privileges.",
+        error: "Access denied. Admin privileges required.",
       };
     }
 
-    console.log("✅ Sign in successful");
     return { success: true };
-  } catch (error: unknown) {
-    console.error("❌ Sign in error:", error);
+  } catch (error) {
+    console.error("Admin sign in error:", error);
     return {
       success: false,
-      error: getErrorMessage(error as { code?: string; message?: string }),
+      error: getErrorMessage(error as { code: string }),
     };
   }
 }
@@ -184,19 +196,19 @@ async function signOut(): Promise<void> {
     if (auth) {
       await firebaseSignOut(auth);
     }
-    console.log("👋 User signed out");
+    globalAuthState.user = null;
+    notifyGlobalListeners();
   } catch (error) {
-    console.error("❌ Sign out error:", error);
+    console.error("Sign out error:", error);
+    throw error;
   }
 }
 
 // Error message helper
-function getErrorMessage(error: { code?: string; message?: string }): string {
-  if (!error.code) return error.message || "Unknown error occurred";
-
+function getErrorMessage(error: { code: string }): string {
   switch (error.code) {
     case "auth/user-not-found":
-      return "No account found with this email address.";
+      return "No admin account found with this email address.";
     case "auth/wrong-password":
     case "auth/invalid-credential":
       return "Invalid email or password. Please try again.";
@@ -213,43 +225,63 @@ function getErrorMessage(error: { code?: string; message?: string }): string {
   }
 }
 
-// React hook for authentication
+// FIXED: React hook for authentication - prevents infinite loops
 export function useAdminAuth() {
   const [authState, setAuthState] = useState(globalAuthState);
+  const listenerRef = useRef<((state: typeof globalAuthState) => void) | null>(
+    null
+  );
 
   useEffect(() => {
-    // Initialize global auth on first hook usage
+    // Initialize auth if not already done
     if (!globalAuthState.initialized) {
       initializeGlobalAuth();
     }
 
-    // Subscribe to global auth state
-    const listener = (newState: typeof globalAuthState) => {
-      setAuthState(newState);
-    };
+    // Create stable listener function
+    if (!listenerRef.current) {
+      listenerRef.current = (newState: typeof globalAuthState) => {
+        setAuthState(newState);
+      };
+    }
 
-    globalListeners.push(listener);
+    // Add listener if not already added
+    if (!globalListeners.has(listenerRef.current)) {
+      globalListeners.add(listenerRef.current);
+    }
 
-    // Set initial state
+    // Set initial state only once
     setAuthState({ ...globalAuthState });
 
-    // Cleanup
+    // Cleanup on unmount
     return () => {
-      const index = globalListeners.indexOf(listener);
-      if (index > -1) {
-        globalListeners.splice(index, 1);
+      if (listenerRef.current) {
+        globalListeners.delete(listenerRef.current);
+        listenerRef.current = null;
       }
     };
-  }, []);
+  }, []); // Empty dependency array is safe now
 
   return {
     user: authState.user,
     loading: authState.loading,
     isAdmin: authState.user?.isAdmin || false,
-    hasRole: (role: "super_admin" | "moderator" | "viewer") =>
-      authState.user?.customClaims.role === role,
-    hasPermission: (permission: string) =>
-      authState.user?.customClaims.permissions?.includes(permission) || false,
+    hasRole: useCallback(
+      (
+        role:
+          | "super_admin"
+          | "lgu_admin"
+          | "field_admin"
+          | "moderator"
+          | "viewer"
+      ) => authState.user?.customClaims.role === role,
+      [authState.user]
+    ),
+    hasPermission: useCallback(
+      (permission: string) =>
+        authState.user?.customClaims.permissions?.includes(permission) || false,
+      [authState.user]
+    ),
     signIn: useCallback(signIn, []),
     signOut: useCallback(signOut, []),
   };
@@ -261,10 +293,11 @@ export function cleanupAuth() {
     authUnsubscribe();
     authUnsubscribe = null;
   }
-  globalListeners = [];
+  globalListeners.clear();
   globalAuthState = {
     user: null,
     loading: true,
     initialized: false,
   };
+  initializationPromise = null;
 }
