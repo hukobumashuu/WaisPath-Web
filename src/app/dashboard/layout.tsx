@@ -1,5 +1,5 @@
 // src/app/dashboard/layout.tsx
-// Updated with Admin Management navigation
+// Updated with Admin Management and Audit Logs navigation
 
 "use client";
 
@@ -15,7 +15,8 @@ import {
   DocumentChartBarIcon,
   FireIcon,
   ShieldCheckIcon,
-  UsersIcon, // NEW: Admin management icon
+  UsersIcon, // Admin management icon
+  DocumentTextIcon, // NEW: Audit logs icon
 } from "@heroicons/react/24/outline";
 
 interface NavigationItem {
@@ -23,7 +24,8 @@ interface NavigationItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   current: boolean;
-  adminOnly?: boolean; // NEW: Flag for admin-only pages
+  adminOnly?: boolean; // Flag for admin-only pages
+  auditOnly?: boolean; // NEW: Flag for audit-only pages
 }
 
 export default function DashboardLayout({
@@ -31,11 +33,11 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, hasRole } = useAdminAuth();
+  const { user, loading, hasRole, hasPermission } = useAdminAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  // Navigation items with admin-only sections
+  // Navigation items with admin-only and audit-only sections
   const navigation: NavigationItem[] = [
     {
       name: "Dashboard",
@@ -67,13 +69,21 @@ export default function DashboardLayout({
       icon: MapPinIcon,
       current: pathname === "/dashboard/map",
     },
-    // NEW: Admin Management - Only for super_admin and lgu_admin
+    // Admin Management - Only for super_admin and lgu_admin
     {
       name: "Admin Management",
       href: "/dashboard/admins",
       icon: UsersIcon,
       current: pathname === "/dashboard/admins",
       adminOnly: true,
+    },
+    // NEW: Audit Logs - Only for super_admin and lgu_admin with audit:read permission
+    {
+      name: "Audit Logs",
+      href: "/dashboard/audit",
+      icon: DocumentTextIcon,
+      current: pathname === "/dashboard/audit",
+      auditOnly: true,
     },
     {
       name: "Settings",
@@ -88,6 +98,14 @@ export default function DashboardLayout({
     if (item.adminOnly) {
       // Only show admin management to super_admin and lgu_admin
       return hasRole("super_admin") || hasRole("lgu_admin");
+    }
+    if (item.auditOnly) {
+      // Only show audit logs to users with audit:read permission
+      return (
+        hasPermission("audit:read") ||
+        hasRole("super_admin") ||
+        hasRole("lgu_admin")
+      );
     }
     return true;
   });
@@ -141,8 +159,8 @@ export default function DashboardLayout({
                     } mr-3 h-5 w-5`}
                   />
                   {item.name}
-                  {/* NEW: Badge for admin-only sections */}
-                  {item.adminOnly && (
+                  {/* Badge for admin-only sections */}
+                  {(item.adminOnly || item.auditOnly) && (
                     <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
                       Admin
                     </span>
@@ -159,7 +177,7 @@ export default function DashboardLayout({
             </div>
             <div className="text-xs text-green-600 mt-1 flex items-center justify-between">
               <span>Firebase Connected • Rule Engine Active</span>
-              {/* NEW: Role badge */}
+              {/* Role badge */}
               <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
                 {user.customClaims.role?.replace("_", " ").toUpperCase() ||
                   "ADMIN"}
