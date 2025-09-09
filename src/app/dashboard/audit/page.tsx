@@ -1,5 +1,5 @@
 // src/app/dashboard/audit/page.tsx
-// Complete Audit Logs Dashboard with filtering, search, and export
+// Complete activity Logs Dashboard with filtering, search, and export
 
 "use client";
 
@@ -348,7 +348,7 @@ export default function AuditLogsPage() {
               className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 mx-auto"
             />
             <p className="mt-4 text-sm" style={{ color: PASIG.muted }}>
-              Loading audit logs...
+              Loading activity logs...
             </p>
           </div>
         </div>
@@ -366,7 +366,7 @@ export default function AuditLogsPage() {
               Access Denied
             </h2>
             <p className="text-gray-600">
-              You don&apos;t have permission to view audit logs.
+              You don&apos;t have permission to view activity logs.
             </p>
           </div>
         </div>
@@ -390,7 +390,7 @@ export default function AuditLogsPage() {
           <div className="flex items-center justify-between py-6">
             <div>
               <h1 className="text-2xl font-bold" style={{ color: PASIG.slate }}>
-                Audit Logs
+                Activity Logs
               </h1>
               <p className="text-sm" style={{ color: PASIG.muted }}>
                 Track all administrative actions and system activities
@@ -745,7 +745,7 @@ export default function AuditLogsPage() {
           {auditLogs.length === 0 && !loadingLogs ? (
             <div className="text-center py-12">
               <DocumentTextIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No audit logs found</p>
+              <p className="text-gray-500">No activity logs found</p>
               {Object.values(filters).some((f) => f) && (
                 <button
                   onClick={handleResetFilters}

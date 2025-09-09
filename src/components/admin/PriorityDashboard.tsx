@@ -774,7 +774,7 @@ export default function PriorityDashboard() {
       <div className="max-w-7xl mx-auto p-6">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-3">
-            🎯 Priority Dashboard
+            Priority Analysis
           </h1>
         </div>
 

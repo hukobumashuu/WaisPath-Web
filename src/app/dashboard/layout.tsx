@@ -46,32 +46,32 @@ export default function DashboardLayout({
       current: pathname === "/dashboard",
     },
     {
-      name: "Priority Analysis",
+      name: "Analysis",
       href: "/dashboard/priority",
       icon: FireIcon,
       current: pathname === "/dashboard/priority",
     },
     {
-      name: "Admin Report",
+      name: "Report",
       href: "/dashboard/reports",
       icon: DocumentChartBarIcon,
       current: pathname === "/dashboard/reports",
     },
     {
-      name: "Obstacle Management",
+      name: "Obstacle",
       href: "/dashboard/obstacles",
       icon: ShieldCheckIcon,
       current: pathname === "/dashboard/obstacles",
     },
     {
-      name: "Interactive Map",
+      name: "Map",
       href: "/dashboard/map",
       icon: MapPinIcon,
       current: pathname === "/dashboard/map",
     },
     // Admin Management - Only for super_admin and lgu_admin
     {
-      name: "Admin Management",
+      name: "Manage",
       href: "/dashboard/admins",
       icon: UsersIcon,
       current: pathname === "/dashboard/admins",
@@ -79,7 +79,7 @@ export default function DashboardLayout({
     },
     // NEW: Audit Logs - Only for super_admin and lgu_admin with audit:read permission
     {
-      name: "Audit Logs",
+      name: "Logs",
       href: "/dashboard/audit",
       icon: DocumentTextIcon,
       current: pathname === "/dashboard/audit",
@@ -136,7 +136,7 @@ export default function DashboardLayout({
         <div className="flex flex-col flex-grow bg-white border-r border-gray-200">
           {/* Logo/Brand */}
           <div className="flex items-center px-6 py-4 border-b border-gray-200">
-            <h1 className="text-xl font-bold text-gray-900">WAISPATH Admin</h1>
+            <h1 className="text-xl font-bold text-gray-900">WAISPATH</h1>
           </div>
 
           {/* Navigation */}
