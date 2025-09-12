@@ -1,5 +1,5 @@
 // src/app/api/audit/stats/route.ts
-// API endpoint for audit statistics and dashboard metrics
+// UPDATED: API endpoint for audit statistics with mobile analytics
 
 import { NextRequest, NextResponse } from "next/server";
 import { auditLogger } from "@/lib/services/auditLogger";
@@ -52,26 +52,59 @@ export async function GET(request: NextRequest) {
       | "24h"
       | "7d"
       | "30d";
+    const adminEmail = searchParams.get("adminEmail") || undefined;
 
-    console.log("📊 Fetching audit statistics:", {
+    console.log("📊 Fetching enhanced audit statistics:", {
       timeframe,
+      adminEmail,
       requestedBy: decodedToken.email,
     });
 
-    // Get audit statistics
+    // Get enhanced audit statistics (now includes mobile stats)
     const stats = await auditLogger.getAuditStats(timeframe);
 
+    // Get mobile admin summary if specific admin requested
+    let mobileAdminSummary = null;
+    if (adminEmail) {
+      mobileAdminSummary = await auditLogger.getMobileAdminSummary(
+        adminEmail,
+        timeframe
+      );
+    }
+
+    // Calculate additional insights
+    const insights = {
+      mobileVsWebRatio:
+        stats.totalActions > 0
+          ? Math.round((stats.mobileActions / stats.totalActions) * 100)
+          : 0,
+      avgActionsPerAdmin:
+        stats.topAdmins.length > 0
+          ? Math.round(stats.totalActions / stats.topAdmins.length)
+          : 0,
+      mostActiveSource:
+        stats.mobileActions > stats.webActions ? "mobile_app" : "web_portal",
+      topAction:
+        Object.entries(stats.actionsByType).sort(
+          ([, a], [, b]) => b - a
+        )[0]?.[0] || "none",
+    };
+
     console.log(
-      `📈 Returning audit stats: ${stats.totalActions} total actions`
+      `📈 Returning enhanced audit stats: ${stats.totalActions} total actions (${stats.mobileActions} mobile, ${stats.webActions} web)`
     );
 
     return NextResponse.json({
       success: true,
-      data: stats,
-      timeframe,
+      data: {
+        stats,
+        mobileAdminSummary,
+        insights,
+        timeframe,
+      },
     });
   } catch (error) {
-    console.error("Audit stats API error:", error);
+    console.error("Enhanced audit stats API error:", error);
 
     // Handle specific Firebase errors
     if (error instanceof Error) {
@@ -87,7 +120,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to fetch audit statistics. Please try again.",
+        error: "Failed to fetch enhanced audit statistics. Please try again.",
       },
       { status: 500 }
     );

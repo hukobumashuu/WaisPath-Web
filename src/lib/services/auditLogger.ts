@@ -1,26 +1,46 @@
 // src/lib/services/auditLogger.ts
-// Audit logging service for tracking all admin actions
+// UPDATED: Audit logging service with mobile admin log support - FIXED TypeScript errors
 
 import { getAdminDb } from "../firebase/admin";
 import type { Firestore } from "firebase-admin/firestore";
 
-// Audit log entry interface
+// ENHANCED: Extended audit log entry interface with mobile support
 export interface AuditLogEntry {
   id?: string;
   adminId: string;
   adminEmail: string;
-  action: AuditActionType;
+  action: AuditActionType | MobileAdminActionType; // ENHANCED: Support mobile actions
   targetType: "obstacle" | "user" | "admin" | "system";
   targetId: string;
   targetDescription?: string;
   details: string;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    source?: "web_portal" | "mobile_app"; // NEW: Track source
+    deviceInfo?: {
+      // NEW: Mobile device info
+      platform: string;
+      appVersion: string;
+      deviceModel: string;
+      deviceBrand?: string;
+      osVersion: string;
+    };
+    location?: {
+      // NEW: GPS location
+      latitude: number;
+      longitude: number;
+    };
+    obstacleId?: string; // NEW: For obstacle reports
+    obstacleType?: string;
+    obstacleSeverity?: string;
+    mobileAction?: boolean; // NEW: Flag mobile actions
+    [key: string]: unknown; // Allow other metadata
+  };
   timestamp: Date;
   ipAddress?: string;
   userAgent?: string;
 }
 
-// Audit action types
+// ENHANCED: Combined audit action types (web + mobile)
 export type AuditActionType =
   // Obstacle actions
   | "obstacle_verified"
@@ -48,34 +68,94 @@ export type AuditActionType =
   | "data_exported"
   | "bulk_import_performed";
 
-// Quick action descriptions
-const ACTION_DESCRIPTIONS: Record<AuditActionType, string> = {
-  // Obstacle actions
+// NEW: Mobile admin action types
+export type MobileAdminActionType =
+  | "mobile_admin_signin"
+  | "mobile_admin_signout"
+  | "mobile_obstacle_report"
+  | "mobile_obstacle_verify"
+  | "mobile_app_launch"
+  | "mobile_location_access";
+
+// ENHANCED: Combined action descriptions
+const ACTION_DESCRIPTIONS: Record<
+  AuditActionType | MobileAdminActionType,
+  string
+> = {
+  // Web obstacle actions
   obstacle_verified: "Verified obstacle report",
   obstacle_rejected: "Rejected obstacle report as false",
   obstacle_resolved: "Marked obstacle as resolved/fixed",
   obstacle_bulk_action: "Performed bulk action on obstacles",
   obstacle_false_report: "Flagged obstacle as false report",
 
-  // User actions
+  // Web user actions
   user_suspended: "Suspended user account",
   user_unsuspended: "Unsuspended user account",
   user_profile_viewed: "Viewed user profile details",
   user_reports_reviewed: "Reviewed user's obstacle reports",
 
-  // Admin actions
+  // Web admin actions
   admin_created: "Created new admin account",
   admin_deactivated: "Deactivated admin account",
   admin_reactivated: "Reactivated admin account",
   admin_role_changed: "Changed admin role/permissions",
   admin_permissions_updated: "Updated admin permissions",
 
-  // System actions
+  // Web system actions
   system_settings_changed: "Modified system settings",
   report_generated: "Generated analytics report",
   data_exported: "Exported system data",
   bulk_import_performed: "Performed bulk data import",
+
+  // NEW: Mobile admin actions
+  mobile_admin_signin: "Admin signed in to mobile app",
+  mobile_admin_signout: "Admin signed out from mobile app",
+  mobile_obstacle_report: "Reported obstacle via mobile app",
+  mobile_obstacle_verify: "Verified obstacle report via mobile app",
+  mobile_app_launch: "Launched mobile app",
+  mobile_location_access: "Granted location access permission",
 };
+
+// NEW: Filter options for UI (including mobile actions)
+export const AUDIT_FILTER_OPTIONS = {
+  actions: [
+    { value: "", label: "All Actions" },
+    // Web actions
+    { value: "obstacle_verified", label: "Obstacle Verified" },
+    { value: "obstacle_rejected", label: "Obstacle Rejected" },
+    { value: "obstacle_resolved", label: "Obstacle Resolved" },
+    { value: "admin_created", label: "Admin Created" },
+    // Mobile actions
+    { value: "mobile_admin_signin", label: "Mobile Sign In" },
+    { value: "mobile_admin_signout", label: "Mobile Sign Out" },
+    { value: "mobile_obstacle_report", label: "Mobile Obstacle Report" },
+  ],
+  targetTypes: [
+    { value: "", label: "All Targets" },
+    { value: "obstacle", label: "Obstacle" },
+    { value: "admin", label: "Admin" },
+    { value: "user", label: "User" },
+    { value: "system", label: "System" },
+  ],
+  sources: [
+    { value: "", label: "All Sources" },
+    { value: "web_portal", label: "Web Portal" },
+    { value: "mobile_app", label: "Mobile App" },
+  ],
+};
+
+// FIXED: Define the options interface properly
+interface AuditLogOptions {
+  adminId?: string;
+  action?: AuditActionType | MobileAdminActionType;
+  targetType?: string;
+  source?: "web_portal" | "mobile_app";
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  offset?: number;
+}
 
 class AuditLogger {
   private db: Firestore;
@@ -85,7 +165,7 @@ class AuditLogger {
   }
 
   /**
-   * Log an admin action to the audit trail
+   * ENHANCED: Log an admin action to the audit trail (supports mobile actions)
    */
   async logAction(
     entry: Omit<AuditLogEntry, "timestamp" | "id">
@@ -98,6 +178,10 @@ class AuditLogger {
           entry.details ||
           ACTION_DESCRIPTIONS[entry.action] ||
           "Admin action performed",
+        metadata: {
+          source: entry.metadata?.source || "web_portal", // Default to web
+          ...entry.metadata,
+        },
       };
 
       // Save to Firestore
@@ -111,19 +195,9 @@ class AuditLogger {
   }
 
   /**
-   * Get audit logs with filtering and pagination
+   * ENHANCED: Get audit logs with filtering and pagination (supports mobile filtering)
    */
-  async getAuditLogs(
-    options: {
-      adminId?: string;
-      action?: AuditActionType;
-      targetType?: string;
-      startDate?: Date;
-      endDate?: Date;
-      limit?: number;
-      offset?: number;
-    } = {}
-  ): Promise<AuditLogEntry[]> {
+  async getAuditLogs(options: AuditLogOptions = {}): Promise<AuditLogEntry[]> {
     try {
       let query = this.db.collection("audit_logs").orderBy("timestamp", "desc");
 
@@ -136,6 +210,9 @@ class AuditLogger {
       }
       if (options.targetType) {
         query = query.where("targetType", "==", options.targetType);
+      }
+      if (options.source) {
+        query = query.where("metadata.source", "==", options.source);
       }
       if (options.startDate) {
         query = query.where("timestamp", ">=", options.startDate);
@@ -165,11 +242,42 @@ class AuditLogger {
   }
 
   /**
-   * Get audit statistics for dashboard
+   * NEW: Get mobile-specific audit logs
+   */
+  async getMobileAuditLogs(
+    options: Omit<AuditLogOptions, "source"> = {}
+  ): Promise<AuditLogEntry[]> {
+    return this.getAuditLogs({
+      ...options,
+      source: "mobile_app",
+    });
+  }
+
+  /**
+   * NEW: Get web-specific audit logs
+   */
+  async getWebAuditLogs(
+    options: Omit<AuditLogOptions, "source"> = {}
+  ): Promise<AuditLogEntry[]> {
+    return this.getAuditLogs({
+      ...options,
+      source: "web_portal",
+    });
+  }
+
+  /**
+   * ENHANCED: Get audit statistics for dashboard (includes mobile stats)
    */
   async getAuditStats(timeframe: "24h" | "7d" | "30d" = "7d"): Promise<{
     totalActions: number;
+    webActions: number; // NEW: Web action count
+    mobileActions: number; // NEW: Mobile action count
     actionsByType: Record<string, number>;
+    actionsBySource: {
+      // NEW: Source breakdown
+      web_portal: number;
+      mobile_app: number;
+    };
     topAdmins: Array<{ adminEmail: string; actionCount: number }>;
     recentActions: AuditLogEntry[];
   }> {
@@ -198,6 +306,8 @@ class AuditLogger {
       // Calculate statistics
       const actionsByType: Record<string, number> = {};
       const adminActionCounts: Record<string, number> = {};
+      let webActions = 0;
+      let mobileActions = 0;
 
       logs.forEach((log) => {
         // Count by action type
@@ -206,6 +316,14 @@ class AuditLogger {
         // Count by admin
         adminActionCounts[log.adminEmail] =
           (adminActionCounts[log.adminEmail] || 0) + 1;
+
+        // NEW: Count by source
+        const source = log.metadata?.source || "web_portal";
+        if (source === "mobile_app") {
+          mobileActions++;
+        } else {
+          webActions++;
+        }
       });
 
       // Get top admins
@@ -216,7 +334,14 @@ class AuditLogger {
 
       return {
         totalActions: logs.length,
+        webActions, // NEW
+        mobileActions, // NEW
         actionsByType,
+        actionsBySource: {
+          // NEW
+          web_portal: webActions,
+          mobile_app: mobileActions,
+        },
         topAdmins,
         recentActions: logs.slice(0, 10),
       };
@@ -227,7 +352,82 @@ class AuditLogger {
   }
 
   /**
-   * Helper methods for common audit actions
+   * NEW: Get mobile admin activity summary
+   */
+  async getMobileAdminSummary(
+    adminEmail?: string,
+    timeframe: "24h" | "7d" | "30d" = "7d"
+  ): Promise<{
+    totalMobileActions: number;
+    signIns: number;
+    signOuts: number;
+    obstacleReports: number;
+    lastActivity?: Date;
+    deviceInfo?: {
+      platform: string;
+      deviceModel: string;
+      appVersion: string;
+    };
+  }> {
+    try {
+      // Set timeframe
+      const now = new Date();
+      const startDate = new Date();
+      switch (timeframe) {
+        case "24h":
+          startDate.setHours(now.getHours() - 24);
+          break;
+        case "7d":
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case "30d":
+          startDate.setDate(now.getDate() - 30);
+          break;
+      }
+
+      const logs = await this.getMobileAuditLogs({
+        startDate,
+        endDate: now,
+      });
+
+      // Filter by admin email if provided
+      const filteredLogs = adminEmail
+        ? logs.filter((log) => log.adminEmail === adminEmail)
+        : logs;
+
+      const summary = {
+        totalMobileActions: filteredLogs.length,
+        signIns: filteredLogs.filter(
+          (log) => log.action === "mobile_admin_signin"
+        ).length,
+        signOuts: filteredLogs.filter(
+          (log) => log.action === "mobile_admin_signout"
+        ).length,
+        obstacleReports: filteredLogs.filter(
+          (log) => log.action === "mobile_obstacle_report"
+        ).length,
+        lastActivity:
+          filteredLogs.length > 0 ? filteredLogs[0].timestamp : undefined,
+        deviceInfo:
+          filteredLogs.length > 0
+            ? filteredLogs[0].metadata?.deviceInfo
+            : undefined,
+      };
+
+      return summary;
+    } catch (error) {
+      console.error("Failed to get mobile admin summary:", error);
+      return {
+        totalMobileActions: 0,
+        signIns: 0,
+        signOuts: 0,
+        obstacleReports: 0,
+      };
+    }
+  }
+
+  /**
+   * Helper methods for common audit actions (EXISTING - unchanged)
    */
   async logObstacleAction(
     adminId: string,
@@ -310,13 +510,23 @@ class AuditLogger {
 // Export singleton instance
 export const auditLogger = new AuditLogger();
 
-// Helper function to get user-friendly action description
-export function getActionDescription(action: AuditActionType): string {
+// ENHANCED: Helper function to get user-friendly action description
+export function getActionDescription(
+  action: AuditActionType | MobileAdminActionType
+): string {
   return ACTION_DESCRIPTIONS[action] || action;
 }
 
-// Helper function to get action color for UI
-export function getActionColor(action: AuditActionType): string {
+// ENHANCED: Helper function to get action color for UI (includes mobile actions)
+export function getActionColor(
+  action: AuditActionType | MobileAdminActionType
+): string {
+  // Mobile actions get special colors
+  if (action.startsWith("mobile_")) {
+    return "bg-blue-100 text-blue-800";
+  }
+
+  // Web actions (original logic)
   if (action.startsWith("obstacle_")) {
     return "bg-blue-100 text-blue-800";
   }

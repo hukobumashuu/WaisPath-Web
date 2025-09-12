@@ -1,5 +1,5 @@
 // src/app/dashboard/audit/page.tsx
-// Complete activity Logs Dashboard with filtering, search, and export
+// ENHANCED: Existing audit dashboard with mobile admin logging support
 
 "use client";
 
@@ -17,6 +17,9 @@ import {
   EyeIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  DevicePhoneMobileIcon, // NEW: Mobile icon
+  ComputerDesktopIcon, // NEW: Desktop icon
+  MapPinIcon, // NEW: Location icon
 } from "@heroicons/react/24/outline";
 import toast, { Toaster } from "react-hot-toast";
 import { getAuth } from "firebase/auth";
@@ -35,6 +38,7 @@ const PASIG = {
   subtleBorder: "#E6EEF8",
 };
 
+// ENHANCED: Interface with mobile metadata support
 interface AuditLogEntry {
   id: string;
   adminId: string;
@@ -45,20 +49,50 @@ interface AuditLogEntry {
   targetDescription?: string;
   details: string;
   timestamp: Date;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    source?: "web_portal" | "mobile_app"; // NEW: Source tracking
+    deviceInfo?: {
+      // NEW: Mobile device info
+      platform: string;
+      appVersion: string;
+      deviceModel: string;
+      deviceBrand?: string;
+      osVersion: string;
+    };
+    location?: {
+      // NEW: GPS coordinates
+      latitude: number;
+      longitude: number;
+    };
+    obstacleId?: string; // NEW: For obstacle reports
+    obstacleType?: string;
+    obstacleSeverity?: string;
+    mobileAction?: boolean;
+    [key: string]: unknown;
+  };
 }
 
+// ENHANCED: Stats interface with mobile support
 interface AuditStats {
   totalActions: number;
+  webActions?: number; // NEW: Web action count
+  mobileActions?: number; // NEW: Mobile action count
   actionsByType: Record<string, number>;
+  actionsBySource?: {
+    // NEW: Source breakdown
+    web_portal: number;
+    mobile_app: number;
+  };
   topAdmins: Array<{ adminEmail: string; actionCount: number }>;
   recentActions: AuditLogEntry[];
 }
 
+// ENHANCED: Filter interface with source filtering
 interface FilterState {
   adminEmail: string;
   action: string;
   targetType: string;
+  source: string; // NEW: Source filter
   startDate: string;
   endDate: string;
   search: string;
@@ -72,7 +106,6 @@ const getAuthToken = async (): Promise<string | null> => {
     if (!user) {
       throw new Error("No authenticated user");
     }
-
     const idToken = await user.getIdToken();
     return idToken;
   } catch (error) {
@@ -98,11 +131,12 @@ export default function AuditLogsPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
 
-  // Filter state
+  // ENHANCED: Filter state with source filtering
   const [filters, setFilters] = useState<FilterState>({
     adminEmail: "",
     action: "",
     targetType: "",
+    source: "", // NEW: Source filter
     startDate: "",
     endDate: "",
     search: "",
@@ -127,7 +161,7 @@ export default function AuditLogsPage() {
     }
   }, [user, currentPage, filters, statsTimeframe]);
 
-  // Load audit logs with filters
+  // ENHANCED: Load audit logs with mobile support
   const loadAuditLogs = async () => {
     try {
       setLoadingLogs(true);
@@ -138,7 +172,7 @@ export default function AuditLogsPage() {
         return;
       }
 
-      // Build query parameters
+      // ENHANCED: Build query parameters with source filter
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: "25",
@@ -147,6 +181,7 @@ export default function AuditLogsPage() {
       if (filters.adminEmail) params.append("adminId", filters.adminEmail);
       if (filters.action) params.append("action", filters.action);
       if (filters.targetType) params.append("targetType", filters.targetType);
+      if (filters.source) params.append("source", filters.source); // NEW: Source filter
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
 
@@ -217,7 +252,7 @@ export default function AuditLogsPage() {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        setAuditStats(result.data);
+        setAuditStats(result.data.stats || result.data); // Handle both old and new API formats
       }
     } catch (error) {
       console.error("Failed to load audit stats:", error);
@@ -226,8 +261,14 @@ export default function AuditLogsPage() {
     }
   };
 
-  // Get action color for badges
+  // ENHANCED: Get action color with mobile support
   const getActionColor = (action: string): string => {
+    // Mobile actions get special treatment
+    if (action.startsWith("mobile_")) {
+      return "bg-blue-100 text-blue-800";
+    }
+
+    // Original logic
     if (action.startsWith("obstacle_")) {
       return "bg-blue-100 text-blue-800";
     }
@@ -241,6 +282,31 @@ export default function AuditLogsPage() {
       return "bg-purple-100 text-purple-800";
     }
     return "bg-gray-100 text-gray-800";
+  };
+
+  // ENHANCED: Get action icon with mobile support
+  const getActionIcon = (action: string, source?: string) => {
+    // Mobile-specific icons
+    if (source === "mobile_app") {
+      return DevicePhoneMobileIcon;
+    }
+
+    // Action-specific icons
+    switch (action) {
+      case "mobile_admin_signin":
+      case "mobile_admin_signout":
+        return UserIcon;
+      case "mobile_obstacle_report":
+        return MapPinIcon;
+      case "obstacle_verified":
+      case "obstacle_rejected":
+        return ShieldCheckIcon;
+      case "admin_created":
+      case "admin_deactivated":
+        return UserIcon;
+      default:
+        return DocumentTextIcon;
+    }
   };
 
   // Get target type icon
@@ -259,7 +325,7 @@ export default function AuditLogsPage() {
     }
   };
 
-  // Export audit logs
+  // ENHANCED: Export audit logs with mobile data
   const handleExport = async () => {
     try {
       const authToken = await getAuthToken();
@@ -268,23 +334,39 @@ export default function AuditLogsPage() {
         return;
       }
 
-      // Create CSV content
+      if (auditLogs.length === 0) {
+        toast.error("No audit logs to export. Please refresh and try again.");
+        return;
+      }
+
+      // ENHANCED: CSV headers with mobile data
       const csvHeaders = [
         "Timestamp",
         "Admin Email",
         "Action",
+        "Source", // NEW
         "Target Type",
         "Target Description",
         "Details",
+        "Device Info", // NEW
+        "Location", // NEW
       ];
 
+      // ENHANCED: CSV rows with mobile metadata
       const csvRows = auditLogs.map((log) => [
         log.timestamp.toISOString(),
         log.adminEmail,
         log.action,
+        log.metadata?.source || "web_portal", // NEW
         log.targetType,
         log.targetDescription || log.targetId,
         log.details,
+        log.metadata?.deviceInfo // NEW
+          ? `${log.metadata.deviceInfo.platform} - ${log.metadata.deviceInfo.deviceModel}`
+          : "N/A",
+        log.metadata?.location // NEW
+          ? `${log.metadata.location.latitude}, ${log.metadata.location.longitude}`
+          : "N/A",
       ]);
 
       const csvContent = [
@@ -292,7 +374,6 @@ export default function AuditLogsPage() {
         ...csvRows.map((row) => row.map((field) => `"${field}"`).join(",")),
       ].join("\n");
 
-      // Download CSV
       const blob = new Blob([csvContent], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -325,11 +406,17 @@ export default function AuditLogsPage() {
       adminEmail: "",
       action: "",
       targetType: "",
+      source: "", // NEW
       startDate: "",
       endDate: "",
       search: "",
     });
     setCurrentPage(1);
+  };
+
+  // Format action text for display
+  const formatActionText = (action: string) => {
+    return action.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   // Check permissions
@@ -375,204 +462,126 @@ export default function AuditLogsPage() {
   }
 
   return (
-    <div style={{ backgroundColor: PASIG.bg, minHeight: "100vh" }}>
-      <Toaster position="top-right" />
-
-      {/* Header */}
-      <header
-        style={{
-          backgroundColor: PASIG.card,
-          borderBottomColor: PASIG.subtleBorder,
-        }}
-        className="shadow-sm"
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-6">
+    <div className="min-h-screen" style={{ backgroundColor: PASIG.bg }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold" style={{ color: PASIG.slate }}>
-                Activity Logs
+              <h1 className="text-3xl font-bold" style={{ color: PASIG.slate }}>
+                Admin Activity Logs
               </h1>
-              <p className="text-sm" style={{ color: PASIG.muted }}>
-                Track all administrative actions and system activities
+              <p className="mt-2 text-sm" style={{ color: PASIG.muted }}>
+                Monitor admin activities across web portal and mobile app
               </p>
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex gap-3">
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md shadow"
-                style={{
-                  backgroundColor: PASIG.primaryNavy,
-                  color: "#fff",
-                  border: "1px solid rgba(11, 50, 82, 0.08)",
-                }}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                <FunnelIcon className="h-4 w-4 mr-2" />
-                Filters
+                <FunnelIcon className="h-4 w-4" />
+                {showFilters ? "Hide" : "Show"} Filters
               </button>
 
               <button
                 onClick={handleExport}
+                className="flex items-center gap-2 px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: PASIG.primaryNavy }}
                 disabled={auditLogs.length === 0}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md shadow"
-                style={{
-                  backgroundColor: PASIG.success,
-                  color: "#fff",
-                  opacity: auditLogs.length === 0 ? 0.6 : 1,
-                }}
               >
-                <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                <ArrowDownTrayIcon className="h-4 w-4" />
                 Export CSV
               </button>
             </div>
           </div>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Overview */}
+        {/* ENHANCED: Statistics Cards with Mobile/Web Breakdown */}
         {auditStats && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div
-              className="bg-white overflow-hidden rounded-lg"
-              style={{ boxShadow: "0 6px 18px rgba(8,52,90,0.04)" }}
-            >
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <DocumentTextIcon
-                      className="h-6 w-6"
-                      style={{ color: PASIG.muted }}
-                    />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt
-                        className="text-sm font-medium truncate"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Total Actions
-                      </dt>
-                      <dd
-                        className="text-lg font-medium"
-                        style={{ color: PASIG.slate }}
-                      >
-                        {auditStats.totalActions}
-                      </dd>
-                    </dl>
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <DocumentTextIcon className="h-8 w-8 text-blue-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">
+                    Total Actions
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {auditStats.totalActions.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div
-              className="bg-white overflow-hidden rounded-lg"
-              style={{ boxShadow: "0 6px 18px rgba(11,165,255,0.04)" }}
-            >
-              <div className="p-5">
+            {/* NEW: Mobile Actions Card */}
+            {auditStats.mobileActions !== undefined && (
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
                 <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <ShieldCheckIcon
-                      className="h-6 w-6"
-                      style={{ color: PASIG.softBlue }}
-                    />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt
-                        className="text-sm font-medium truncate"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Admin Actions
-                      </dt>
-                      <dd
-                        className="text-lg font-medium"
-                        style={{ color: PASIG.slate }}
-                      >
-                        {Object.entries(auditStats.actionsByType)
-                          .filter(([key]) => key.startsWith("admin_"))
-                          .reduce((sum, [, count]) => sum + count, 0)}
-                      </dd>
-                    </dl>
+                  <DevicePhoneMobileIcon
+                    className="h-8 w-8"
+                    style={{ color: PASIG.softBlue }}
+                  />
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">
+                      Mobile Actions
+                    </p>
+                    <p className="text-2xl font-semibold text-gray-900">
+                      {auditStats.mobileActions.toLocaleString()}
+                    </p>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div
-              className="bg-white overflow-hidden rounded-lg"
-              style={{ boxShadow: "0 6px 18px rgba(8,52,90,0.04)" }}
-            >
-              <div className="p-5">
+            {/* NEW: Web Actions Card */}
+            {auditStats.webActions !== undefined && (
+              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
                 <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <UserIcon
-                      className="h-6 w-6"
-                      style={{ color: PASIG.success }}
-                    />
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt
-                        className="text-sm font-medium truncate"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Active Admins
-                      </dt>
-                      <dd
-                        className="text-lg font-medium"
-                        style={{ color: PASIG.slate }}
-                      >
-                        {auditStats.topAdmins.length}
-                      </dd>
-                    </dl>
+                  <ComputerDesktopIcon className="h-8 w-8 text-gray-600" />
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">
+                      Web Actions
+                    </p>
+                    <p className="text-2xl font-semibold text-gray-900">
+                      {auditStats.webActions.toLocaleString()}
+                    </p>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div
-              className="bg-white overflow-hidden rounded-lg"
-              style={{ boxShadow: "0 6px 18px rgba(8,52,90,0.04)" }}
-            >
-              <div className="p-5">
-                <div className="flex items-center space-x-2">
-                  <select
-                    value={statsTimeframe}
-                    onChange={(e) =>
-                      setStatsTimeframe(e.target.value as "24h" | "7d" | "30d")
-                    }
-                    className="text-sm border rounded"
-                    style={{
-                      borderColor: PASIG.subtleBorder,
-                      color: PASIG.slate,
-                    }}
-                  >
-                    <option value="24h">Last 24 Hours</option>
-                    <option value="7d">Last 7 Days</option>
-                    <option value="30d">Last 30 Days</option>
-                  </select>
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <UserIcon
+                  className="h-8 w-8"
+                  style={{ color: PASIG.success }}
+                />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">
+                    Active Admins
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {auditStats.topAdmins.length}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Filters */}
+        {/* ENHANCED: Filter Panel with Source Filter */}
         {showFilters && (
-          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <form onSubmit={handleFilterSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+            <form onSubmit={handleFilterSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
                 <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Admin Email
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     value={filters.adminEmail}
                     onChange={(e) =>
                       setFilters((prev) => ({
@@ -580,22 +589,14 @@ export default function AuditLogsPage() {
                         adminEmail: e.target.value,
                       }))
                     }
-                    className="w-full rounded-md px-3 py-2"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Filter by admin email"
-                    style={{
-                      border: `1px solid ${PASIG.subtleBorder}`,
-                      backgroundColor: PASIG.bg,
-                      color: PASIG.slate,
-                    }}
                   />
                 </div>
 
                 <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    Action Type
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Action
                   </label>
                   <select
                     value={filters.action}
@@ -605,35 +606,46 @@ export default function AuditLogsPage() {
                         action: e.target.value,
                       }))
                     }
-                    className="w-full rounded-md px-3 py-2"
-                    style={{
-                      border: `1px solid ${PASIG.subtleBorder}`,
-                      backgroundColor: PASIG.bg,
-                      color: PASIG.slate,
-                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Actions</option>
-                    <option value="admin_created">Admin Created</option>
-                    <option value="admin_deactivated">Admin Deactivated</option>
-                    <option value="admin_reactivated">Admin Reactivated</option>
                     <option value="obstacle_verified">Obstacle Verified</option>
                     <option value="obstacle_rejected">Obstacle Rejected</option>
                     <option value="obstacle_resolved">Obstacle Resolved</option>
-                    <option value="user_suspended">User Suspended</option>
-                    <option value="user_unsuspended">User Unsuspended</option>
-                    <option value="system_settings_changed">
-                      System Settings Changed
+                    <option value="admin_created">Admin Created</option>
+                    <option value="mobile_admin_signin">Mobile Sign In</option>
+                    <option value="mobile_admin_signout">
+                      Mobile Sign Out
                     </option>
-                    <option value="report_generated">Report Generated</option>
-                    <option value="data_exported">Data Exported</option>
+                    <option value="mobile_obstacle_report">
+                      Mobile Report
+                    </option>
+                  </select>
+                </div>
+
+                {/* NEW: Source Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Source
+                  </label>
+                  <select
+                    value={filters.source}
+                    onChange={(e) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        source: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Sources</option>
+                    <option value="web_portal">Web Portal</option>
+                    <option value="mobile_app">Mobile App</option>
                   </select>
                 </div>
 
                 <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Target Type
                   </label>
                   <select
@@ -644,71 +656,14 @@ export default function AuditLogsPage() {
                         targetType: e.target.value,
                       }))
                     }
-                    className="w-full rounded-md px-3 py-2"
-                    style={{
-                      border: `1px solid ${PASIG.subtleBorder}`,
-                      backgroundColor: PASIG.bg,
-                      color: PASIG.slate,
-                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Targets</option>
+                    <option value="obstacle">Obstacle</option>
                     <option value="admin">Admin</option>
                     <option value="user">User</option>
-                    <option value="obstacle">Obstacle</option>
                     <option value="system">System</option>
                   </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={filters.startDate}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        startDate: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-md px-3 py-2"
-                    style={{
-                      border: `1px solid ${PASIG.subtleBorder}`,
-                      backgroundColor: PASIG.bg,
-                      color: PASIG.slate,
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={filters.endDate}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        endDate: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-md px-3 py-2"
-                    style={{
-                      border: `1px solid ${PASIG.subtleBorder}`,
-                      backgroundColor: PASIG.bg,
-                      color: PASIG.slate,
-                    }}
-                  />
                 </div>
               </div>
 
@@ -716,22 +671,14 @@ export default function AuditLogsPage() {
                 <button
                   type="button"
                   onClick={handleResetFilters}
-                  className="px-4 py-2 rounded-md text-sm font-medium"
-                  style={{
-                    border: `1px solid ${PASIG.subtleBorder}`,
-                    backgroundColor: PASIG.card,
-                    color: PASIG.slate,
-                  }}
+                  className="px-4 py-2 rounded-md text-sm font-medium border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 >
-                  Reset
+                  Reset Filters
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-md text-sm font-medium"
-                  style={{
-                    backgroundColor: PASIG.softBlue,
-                    color: "#fff",
-                  }}
+                  className="px-4 py-2 rounded-md text-sm font-medium text-white"
+                  style={{ backgroundColor: PASIG.softBlue }}
                 >
                   Apply Filters
                 </button>
@@ -740,375 +687,244 @@ export default function AuditLogsPage() {
           </div>
         )}
 
-        {/* Audit Logs Table */}
-        <div className="bg-white rounded-md shadow-sm overflow-hidden">
+        {/* ENHANCED: Audit Logs Table with Mobile Data */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           {auditLogs.length === 0 && !loadingLogs ? (
             <div className="text-center py-12">
-              <DocumentTextIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No activity logs found</p>
-              {Object.values(filters).some((f) => f) && (
-                <button
-                  onClick={handleResetFilters}
-                  className="mt-2 text-blue-600 hover:text-blue-800"
-                >
-                  Clear filters to see all logs
-                </button>
-              )}
+              <DocumentTextIcon className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                No audit logs found
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Admin activities will appear here when they occur.
+              </p>
             </div>
           ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead style={{ backgroundColor: PASIG.bg }}>
-                    <tr>
-                      <th
-                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Timestamp
-                      </th>
-                      <th
-                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Admin
-                      </th>
-                      <th
-                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Action
-                      </th>
-                      <th
-                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Target
-                      </th>
-                      <th
-                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Details
-                      </th>
-                      <th
-                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                        style={{ color: PASIG.muted }}
-                      >
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {auditLogs.map((log) => {
-                      const TargetIcon = getTargetTypeIcon(log.targetType);
-                      return (
-                        <tr key={log.id} className="hover:bg-gray-50">
-                          <td
-                            className="px-6 py-4 whitespace-nowrap text-sm"
-                            style={{ color: PASIG.muted }}
-                          >
-                            <div className="flex items-center">
-                              <ClockIcon className="h-4 w-4 mr-2" />
-                              <div>
-                                <div>{log.timestamp.toLocaleDateString()}</div>
-                                <div className="text-xs">
-                                  {log.timestamp.toLocaleTimeString()}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <UserIcon
-                                className="h-4 w-4 mr-2"
-                                style={{ color: PASIG.muted }}
-                              />
-                              <div
-                                className="text-sm font-medium"
-                                style={{ color: PASIG.slate }}
-                              >
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead style={{ backgroundColor: PASIG.bg }}>
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Admin / Action
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Source / Target
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Details
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Timestamp
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {auditLogs.map((log) => {
+                    const ActionIcon = getActionIcon(
+                      log.action,
+                      log.metadata?.source
+                    );
+                    const actionColor = getActionColor(log.action);
+
+                    return (
+                      <tr key={log.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <ActionIcon
+                              className="h-5 w-5 mr-3"
+                              style={{
+                                color:
+                                  log.metadata?.source === "mobile_app"
+                                    ? PASIG.softBlue
+                                    : PASIG.muted,
+                              }}
+                            />
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
                                 {log.adminEmail}
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getActionColor(
-                                log.action
-                              )}`}
-                            >
-                              {log.action.replace(/_/g, " ").toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <TargetIcon
-                                className="h-4 w-4 mr-2"
-                                style={{ color: PASIG.muted }}
-                              />
-                              <div>
-                                <div
-                                  className="text-sm font-medium"
-                                  style={{ color: PASIG.slate }}
-                                >
-                                  {log.targetType.toUpperCase()}
-                                </div>
-                                <div
-                                  className="text-xs"
-                                  style={{ color: PASIG.muted }}
-                                >
-                                  {log.targetDescription || log.targetId}
-                                </div>
+                              <div className="text-sm text-gray-500">
+                                {formatActionText(log.action)}
                               </div>
                             </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div
-                              className="text-sm"
-                              style={{ color: PASIG.slate }}
-                            >
-                              {log.details.length > 60
-                                ? `${log.details.substring(0, 60)}...`
-                                : log.details}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <button
-                              onClick={() => setSelectedLog(log)}
-                              className="inline-flex items-center px-3 py-1 rounded-md text-sm font-medium"
-                              style={{
-                                border: "1px solid rgba(15,23,42,0.06)",
-                                backgroundColor: PASIG.card,
-                                color: PASIG.primaryNavy,
-                                boxShadow: "0 1px 2px rgba(8,52,90,0.03)",
-                              }}
-                            >
-                              <EyeIcon className="h-4 w-4 mr-1" />
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                        </td>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                  <div className="flex-1 flex justify-between sm:hidden">
-                    <button
-                      onClick={() => setCurrentPage(currentPage - 1)}
-                      disabled={!hasPreviousPage}
-                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      onClick={() => setCurrentPage(currentPage + 1)}
-                      disabled={!hasNextPage}
-                      className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </div>
-                  <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm text-gray-700">
-                        Showing page{" "}
-                        <span className="font-medium">{currentPage}</span> of{" "}
-                        <span className="font-medium">{totalPages}</span>
-                      </p>
-                    </div>
-                    <div>
-                      <nav
-                        className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                        aria-label="Pagination"
-                      >
-                        <button
-                          onClick={() => setCurrentPage(currentPage - 1)}
-                          disabled={!hasPreviousPage}
-                          className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          <ChevronLeftIcon className="h-5 w-5" />
-                        </button>
-                        <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                          {currentPage}
-                        </span>
-                        <button
-                          onClick={() => setCurrentPage(currentPage + 1)}
-                          disabled={!hasNextPage}
-                          className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          <ChevronRightIcon className="h-5 w-5" />
-                        </button>
-                      </nav>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            {/* NEW: Source Badge */}
+                            <div className="flex items-center mb-1">
+                              {log.metadata?.source === "mobile_app" ? (
+                                <DevicePhoneMobileIcon className="h-4 w-4 mr-1 text-blue-500" />
+                              ) : (
+                                <ComputerDesktopIcon className="h-4 w-4 mr-1 text-gray-500" />
+                              )}
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  log.metadata?.source === "mobile_app"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {log.metadata?.source === "mobile_app"
+                                  ? "Mobile App"
+                                  : "Web Portal"}
+                              </span>
+                            </div>
+
+                            {/* Target Info */}
+                            <div className="text-sm text-gray-500">
+                              {log.targetType}:{" "}
+                              {log.targetDescription || log.targetId}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900 mb-1">
+                            {log.details}
+                          </div>
+
+                          {/* NEW: Mobile-specific details */}
+                          {log.metadata?.source === "mobile_app" && (
+                            <div className="text-xs text-gray-500 space-y-1">
+                              {log.metadata.deviceInfo && (
+                                <div>
+                                  📱 {log.metadata.deviceInfo.platform} -{" "}
+                                  {log.metadata.deviceInfo.deviceModel}
+                                </div>
+                              )}
+                              {log.metadata.obstacleType && (
+                                <div>
+                                  🚧 {log.metadata.obstacleType} (
+                                  {log.metadata.obstacleSeverity})
+                                </div>
+                              )}
+                              {log.metadata.location && (
+                                <div>
+                                  📍 {log.metadata.location.latitude.toFixed(6)}
+                                  , {log.metadata.location.longitude.toFixed(6)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {log.timestamp.toLocaleDateString()}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {log.timestamp.toLocaleTimeString()}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
-      </main>
 
-      {/* Log Detail Modal */}
-      {selectedLog && (
-        <div
-          className="fixed inset-0 flex items-center justify-center p-4 z-50"
-          style={{ backgroundColor: "rgba(2,6,23,0.45)" }}
-        >
-          <div
-            className="rounded-lg max-w-2xl w-full p-6"
-            style={{
-              backgroundColor: PASIG.card,
-              boxShadow: "0 20px 50px rgba(8,52,90,0.12)",
-              border: `1px solid ${PASIG.subtleBorder}`,
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3
-                className="text-lg font-semibold"
-                style={{ color: PASIG.slate }}
-              >
-                Audit Log Details
-              </h3>
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <span className="sr-only">Close</span>
-                <svg
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+            <div className="flex items-center justify-between">
+              <div className="flex justify-between flex-1 sm:hidden">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
+                  Previous
+                </button>
+                <button
+                  onClick={() =>
+                    setCurrentPage(Math.min(totalPages, currentPage + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
                 <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    Timestamp
-                  </label>
-                  <p className="text-sm" style={{ color: PASIG.slate }}>
-                    {selectedLog.timestamp.toLocaleString()}
+                  <p className="text-sm text-gray-700">
+                    Showing{" "}
+                    <span className="font-medium">
+                      {(currentPage - 1) * 25 + 1}
+                    </span>{" "}
+                    to{" "}
+                    <span className="font-medium">
+                      {Math.min(currentPage * 25, auditLogs.length)}
+                    </span>{" "}
+                    of <span className="font-medium">{auditLogs.length}</span>{" "}
+                    results
                   </p>
                 </div>
+
                 <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    Admin
-                  </label>
-                  <p className="text-sm" style={{ color: PASIG.slate }}>
-                    {selectedLog.adminEmail}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    Action
-                  </label>
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getActionColor(
-                      selectedLog.action
-                    )}`}
-                  >
-                    {selectedLog.action.replace(/_/g, " ").toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-1"
-                    style={{ color: PASIG.primaryNavy }}
-                  >
-                    Target Type
-                  </label>
-                  <p className="text-sm" style={{ color: PASIG.slate }}>
-                    {selectedLog.targetType.toUpperCase()}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label
-                  className="block text-sm font-medium mb-1"
-                  style={{ color: PASIG.primaryNavy }}
-                >
-                  Target Description
-                </label>
-                <p className="text-sm" style={{ color: PASIG.slate }}>
-                  {selectedLog.targetDescription || selectedLog.targetId}
-                </p>
-              </div>
-
-              <div>
-                <label
-                  className="block text-sm font-medium mb-1"
-                  style={{ color: PASIG.primaryNavy }}
-                >
-                  Details
-                </label>
-                <p className="text-sm" style={{ color: PASIG.slate }}>
-                  {selectedLog.details}
-                </p>
-              </div>
-
-              {selectedLog.metadata &&
-                Object.keys(selectedLog.metadata).length > 0 && (
-                  <div>
-                    <label
-                      className="block text-sm font-medium mb-1"
-                      style={{ color: PASIG.primaryNavy }}
+                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                    <button
+                      onClick={() =>
+                        setCurrentPage(Math.max(1, currentPage - 1))
+                      }
+                      disabled={!hasPreviousPage}
+                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Additional Metadata
-                    </label>
-                    <pre
-                      className="text-xs bg-gray-100 p-3 rounded"
-                      style={{ color: PASIG.slate }}
-                    >
-                      {JSON.stringify(selectedLog.metadata, null, 2)}
-                    </pre>
-                  </div>
-                )}
-            </div>
+                      <ChevronLeftIcon className="h-5 w-5" />
+                    </button>
 
-            <div className="flex justify-end mt-6">
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="px-4 py-2 rounded-md text-sm font-medium"
-                style={{
-                  backgroundColor: PASIG.softBlue,
-                  color: "#fff",
-                }}
-              >
-                Close
-              </button>
+                    {/* Page Numbers */}
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum = i + 1;
+                      if (totalPages > 5) {
+                        if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                      }
+
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                            pageNum === currentPage
+                              ? "z-10 bg-blue-50 border-blue-500 text-blue-600"
+                              : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() =>
+                        setCurrentPage(Math.min(totalPages, currentPage + 1))
+                      }
+                      disabled={!hasNextPage}
+                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRightIcon className="h-5 w-5" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Toast container */}
+      <Toaster position="top-right" />
     </div>
   );
 }

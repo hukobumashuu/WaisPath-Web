@@ -1,8 +1,12 @@
 // src/app/api/audit/logs/route.ts
-// API endpoint for fetching audit logs with filtering and pagination
+// UPDATED: API endpoint for fetching enhanced audit logs with mobile support
 
 import { NextRequest, NextResponse } from "next/server";
-import { auditLogger, type AuditActionType } from "@/lib/services/auditLogger";
+import {
+  auditLogger,
+  type AuditActionType,
+  type MobileAdminActionType,
+} from "@/lib/services/auditLogger";
 import { getAdminAuth } from "@/lib/firebase/admin";
 
 export async function GET(request: NextRequest) {
@@ -53,6 +57,10 @@ export async function GET(request: NextRequest) {
     const adminId = searchParams.get("adminId") || undefined;
     const actionParam = searchParams.get("action");
     const targetType = searchParams.get("targetType") || undefined;
+    const source = searchParams.get("source") as
+      | "web_portal"
+      | "mobile_app"
+      | undefined;
     const startDate = searchParams.get("startDate")
       ? new Date(searchParams.get("startDate")!)
       : undefined;
@@ -61,10 +69,11 @@ export async function GET(request: NextRequest) {
       : undefined;
 
     // Validate and convert action parameter to proper type
-    let action: AuditActionType | undefined = undefined;
+    let action: AuditActionType | MobileAdminActionType | undefined = undefined;
     if (actionParam) {
-      // Define all valid action types
-      const validActions: AuditActionType[] = [
+      // Define all valid action types (web + mobile)
+      const validActions: (AuditActionType | MobileAdminActionType)[] = [
+        // Web actions
         "obstacle_verified",
         "obstacle_rejected",
         "obstacle_resolved",
@@ -83,46 +92,60 @@ export async function GET(request: NextRequest) {
         "report_generated",
         "data_exported",
         "bulk_import_performed",
+        // Mobile actions
+        "mobile_admin_signin",
+        "mobile_admin_signout",
+        "mobile_obstacle_report",
+        "mobile_obstacle_verify",
+        "mobile_app_launch",
+        "mobile_location_access",
       ];
 
       // Only set action if it's a valid type
-      if (validActions.includes(actionParam as AuditActionType)) {
-        action = actionParam as AuditActionType;
+      if (
+        validActions.includes(
+          actionParam as AuditActionType | MobileAdminActionType
+        )
+      ) {
+        action = actionParam as AuditActionType | MobileAdminActionType;
       }
     }
 
     // Calculate offset for pagination
     const offset = (page - 1) * limit;
 
-    console.log("📋 Fetching audit logs with filters:", {
+    console.log("📋 Fetching enhanced audit logs with filters:", {
       page,
       limit,
       adminId,
       action,
       targetType,
+      source,
       startDate: startDate?.toISOString(),
       endDate: endDate?.toISOString(),
       requestedBy: decodedToken.email,
     });
 
-    // Get audit logs with filters - action is now properly typed
+    // Get audit logs with filters - now supports mobile actions and source filtering
     const auditLogs = await auditLogger.getAuditLogs({
       adminId,
-      action, // This is now AuditActionType | undefined
+      action,
       targetType,
+      source, // NEW: Filter by mobile/web source
       startDate,
       endDate,
       limit: limit + 1, // Get one extra to check if there are more pages
     });
 
-    // Handle pagination manually since auditLogger doesn't support offset
+    // Handle pagination manually
     const startIndex = offset;
     const endIndex = startIndex + limit;
     const paginatedLogs = auditLogs.slice(startIndex, endIndex);
     const hasNextPage = auditLogs.length > endIndex;
     const hasPreviousPage = page > 1;
+    const totalPages = Math.ceil(auditLogs.length / limit);
 
-    // Format response data
+    // Format response data with mobile-specific fields
     const safeAuditData = paginatedLogs.map((log) => ({
       id: log.id,
       adminId: log.adminId,
@@ -133,11 +156,19 @@ export async function GET(request: NextRequest) {
       targetDescription: log.targetDescription,
       details: log.details,
       timestamp: log.timestamp,
-      metadata: log.metadata,
+      metadata: {
+        source: log.metadata?.source || "web_portal",
+        deviceInfo: log.metadata?.deviceInfo,
+        location: log.metadata?.location,
+        obstacleId: log.metadata?.obstacleId,
+        obstacleType: log.metadata?.obstacleType,
+        obstacleSeverity: log.metadata?.obstacleSeverity,
+        mobileAction: log.metadata?.mobileAction,
+      },
     }));
 
     console.log(
-      `📊 Returning ${safeAuditData.length} audit logs (page ${page})`
+      `📊 Returning ${safeAuditData.length} enhanced audit logs (page ${page})`
     );
 
     return NextResponse.json({
@@ -149,11 +180,11 @@ export async function GET(request: NextRequest) {
         total: auditLogs.length,
         hasNextPage,
         hasPreviousPage,
-        totalPages: Math.ceil(auditLogs.length / limit),
+        totalPages,
       },
     });
   } catch (error) {
-    console.error("Audit logs API error:", error);
+    console.error("Enhanced audit logs API error:", error);
 
     // Handle specific Firebase errors
     if (error instanceof Error) {
@@ -169,7 +200,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to fetch audit logs. Please try again.",
+        error: "Failed to fetch enhanced audit logs. Please try again.",
       },
       { status: 500 }
     );
