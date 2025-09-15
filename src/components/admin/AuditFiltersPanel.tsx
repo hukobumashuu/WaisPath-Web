@@ -1,5 +1,5 @@
 // src/components/admin/AuditFiltersPanel.tsx
-// Modern filters panel for audit logs
+// ESSENTIAL: Only the core actions that are actually used in the system
 
 "use client";
 
@@ -46,20 +46,36 @@ export default function AuditFiltersPanel({
   show,
   onToggle,
 }: AuditFiltersPanelProps) {
+  // ESSENTIAL: Only core actions that are actually used
   const filterOptions = {
     actions: [
       { value: "", label: "All Actions" },
-      { value: "obstacle_verified", label: "Obstacle Verified" },
-      { value: "obstacle_rejected", label: "Obstacle Rejected" },
-      { value: "obstacle_resolved", label: "Obstacle Resolved" },
+
+      // Priority Dashboard Actions (main obstacle management)
+      { value: "priority_obstacle_verified", label: "Obstacle Verified" },
+      { value: "priority_obstacle_rejected", label: "Obstacle Rejected" },
+      { value: "priority_obstacle_resolved", label: "Obstacle Resolved" },
+      {
+        value: "priority_dashboard_accessed",
+        label: "Priority Dashboard Accessed",
+      },
+
+      // Essential Admin Actions
       { value: "admin_created", label: "Admin Created" },
-      { value: "priority_obstacle_verified", label: "Priority: Verified" },
-      { value: "priority_obstacle_rejected", label: "Priority: Rejected" },
+      { value: "admin_deactivated", label: "Admin Deactivated" },
+      { value: "admin_reactivated", label: "Admin Reactivated" },
+
+      // Essential Authentication Actions
       { value: "admin_signin_web", label: "Web Sign In" },
       { value: "admin_signout_web", label: "Web Sign Out" },
+      { value: "admin_profile_updated", label: "Profile Updated" },
+      { value: "admin_password_changed", label: "Password Changed" },
+
+      // Essential Mobile Actions
       { value: "mobile_admin_signin", label: "Mobile Sign In" },
       { value: "mobile_admin_signout", label: "Mobile Sign Out" },
-      { value: "mobile_obstacle_report", label: "Mobile Report" },
+      { value: "mobile_obstacle_report", label: "Mobile Obstacle Report" },
+      { value: "mobile_app_launch", label: "Mobile App Launch" },
     ],
     sources: [
       { value: "", label: "All Sources" },
@@ -70,7 +86,6 @@ export default function AuditFiltersPanel({
       { value: "", label: "All Targets" },
       { value: "obstacle", label: "Obstacle" },
       { value: "admin", label: "Admin" },
-      { value: "user", label: "User" },
       { value: "system", label: "System" },
     ],
   };
@@ -79,7 +94,7 @@ export default function AuditFiltersPanel({
 
   return (
     <div className="mb-6">
-      {/* Filter Toggle Button */}
+      {/* Filter Toggle Button - ORIGINAL STYLING */}
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={onToggle}
@@ -119,7 +134,7 @@ export default function AuditFiltersPanel({
         )}
       </div>
 
-      {/* Filter Panel */}
+      {/* Filter Panel - ORIGINAL STYLING */}
       {show && (
         <div
           className="rounded-2xl p-6 shadow-sm border"
@@ -129,8 +144,9 @@ export default function AuditFiltersPanel({
           }}
         >
           <form onSubmit={onSubmit} className="space-y-6">
+            {/* ORIGINAL: Grid layout with 4 columns */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Admin Email */}
+              {/* Admin Email - ORIGINAL */}
               <div>
                 <label
                   className="block text-sm font-medium mb-2"
@@ -152,17 +168,17 @@ export default function AuditFiltersPanel({
                     borderColor: PASIG.subtleBorder,
                     backgroundColor: PASIG.card,
                   }}
-                  placeholder="Filter by email"
+                  placeholder="Enter admin email..."
                 />
               </div>
 
-              {/* Action */}
+              {/* Action - ESSENTIAL ONLY */}
               <div>
                 <label
                   className="block text-sm font-medium mb-2"
                   style={{ color: PASIG.slate }}
                 >
-                  Action Type
+                  Action
                 </label>
                 <select
                   value={filters.action}
@@ -183,7 +199,7 @@ export default function AuditFiltersPanel({
                 </select>
               </div>
 
-              {/* Source */}
+              {/* Source - ORIGINAL */}
               <div>
                 <label
                   className="block text-sm font-medium mb-2"
@@ -210,7 +226,7 @@ export default function AuditFiltersPanel({
                 </select>
               </div>
 
-              {/* Target Type */}
+              {/* Target Type - SIMPLIFIED */}
               <div>
                 <label
                   className="block text-sm font-medium mb-2"
@@ -241,7 +257,7 @@ export default function AuditFiltersPanel({
               </div>
             </div>
 
-            {/* Date Range */}
+            {/* ORIGINAL: Date Range in separate row */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label
@@ -265,7 +281,11 @@ export default function AuditFiltersPanel({
                     }))
                   }
                   className="w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
-                  style={{ borderColor: PASIG.subtleBorder }}
+                  style={{
+                    borderColor: PASIG.subtleBorder,
+                    backgroundColor: PASIG.card,
+                    color: PASIG.slate, // FIXED: Better text visibility
+                  }}
                 />
               </div>
 
@@ -288,12 +308,16 @@ export default function AuditFiltersPanel({
                     setFilters((prev) => ({ ...prev, endDate: e.target.value }))
                   }
                   className="w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
-                  style={{ borderColor: PASIG.subtleBorder }}
+                  style={{
+                    borderColor: PASIG.subtleBorder,
+                    backgroundColor: PASIG.card,
+                    color: PASIG.slate, // FIXED: Better text visibility
+                  }}
                 />
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* ORIGINAL: Action Buttons */}
             <div className="flex justify-end space-x-3 pt-4">
               <button
                 type="button"

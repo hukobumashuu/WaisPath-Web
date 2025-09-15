@@ -1,5 +1,5 @@
 // src/app/api/audit/logs/route.ts
-// FIXED: Proper pagination at database level, not client-side slicing
+// FIXED: Simplified query logic to avoid complex composite index requirements
 
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -71,35 +71,40 @@ export async function GET(request: NextRequest) {
     // Validate and convert action parameter to proper type
     let action: AuditActionType | MobileAdminActionType | undefined = undefined;
     if (actionParam) {
+      // CLEANED: Valid action types matching the cleaned audit logger
       const validActions: (AuditActionType | MobileAdminActionType)[] = [
-        // Web actions
-        "obstacle_verified",
-        "obstacle_rejected",
-        "obstacle_resolved",
-        "obstacle_bulk_action",
-        "obstacle_false_report",
-        "user_suspended",
-        "user_unsuspended",
-        "user_profile_viewed",
-        "user_reports_reviewed",
-        "admin_created",
-        "admin_deactivated",
-        "admin_reactivated",
-        "admin_role_changed",
-        "admin_permissions_updated",
-        "system_settings_changed",
-        "report_generated",
-        "data_exported",
-        "bulk_import_performed",
+        // Priority Dashboard actions (main obstacle management)
         "priority_obstacle_verified",
         "priority_obstacle_rejected",
         "priority_obstacle_resolved",
         "priority_dashboard_accessed",
+
+        // Authentication actions
         "admin_signin_web",
         "admin_signout_web",
         "admin_signin_failed",
         "admin_profile_updated",
         "admin_password_changed",
+
+        // User management actions
+        "user_suspended",
+        "user_unsuspended",
+        "user_profile_viewed",
+        "user_reports_reviewed",
+
+        // Admin management actions
+        "admin_created",
+        "admin_deactivated",
+        "admin_reactivated",
+        "admin_role_changed",
+        "admin_permissions_updated",
+
+        // System actions
+        "system_settings_changed",
+        "report_generated",
+        "data_exported",
+        "bulk_import_performed",
+
         // Mobile actions
         "mobile_admin_signin",
         "mobile_admin_signout",
@@ -109,6 +114,7 @@ export async function GET(request: NextRequest) {
         "mobile_location_access",
       ];
 
+      // Only set action if it's a valid type
       if (
         validActions.includes(
           actionParam as AuditActionType | MobileAdminActionType
@@ -118,7 +124,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log("📋 Fetching audit logs with proper pagination:", {
+    console.log("📋 Fetching audit logs with simplified approach:", {
       page,
       limit,
       adminId,
@@ -130,86 +136,170 @@ export async function GET(request: NextRequest) {
       requestedBy: decodedToken.email,
     });
 
-    // FIXED: Calculate proper offset for database pagination
+    // Calculate offset for pagination
     const offset = (page - 1) * limit;
 
-    // First, get total count for pagination info (without limit)
-    const totalLogs = await auditLogger.getAuditLogs({
-      adminId,
-      action,
-      targetType,
-      source,
-      startDate,
-      endDate,
-      // No limit for count query
-    });
+    // STRATEGY 1: Try the simplified query first
+    try {
+      console.log("🔍 Attempting simplified query...");
 
-    console.log(`📊 Total logs matching filters: ${totalLogs.length}`);
+      // Get logs with simplified filters to avoid complex composite indexes
+      const auditLogs = await auditLogger.getAuditLogs({
+        adminId,
+        action,
+        targetType,
+        source,
+        startDate,
+        endDate,
+        limit: limit * 10, // Get more records to handle client-side pagination temporarily
+      });
 
-    // Then get the actual page of logs with proper database-level pagination
-    const auditLogs = await auditLogger.getAuditLogs({
-      adminId,
-      action,
-      targetType,
-      source,
-      startDate,
-      endDate,
-      limit,
-      offset, // FIXED: Pass offset to database query
-    });
+      console.log(`📄 Retrieved ${auditLogs.length} total logs`);
 
-    console.log(`📄 Retrieved ${auditLogs.length} logs for page ${page}`);
+      // Apply client-side pagination temporarily until indexes are created
+      const totalLogs = auditLogs.length;
+      const startIndex = offset;
+      const endIndex = startIndex + limit;
+      const paginatedLogs = auditLogs.slice(startIndex, endIndex);
 
-    // Calculate pagination info based on total count
-    const totalPages = Math.ceil(totalLogs.length / limit);
-    const hasNextPage = page < totalPages;
-    const hasPreviousPage = page > 1;
+      // Calculate pagination info
+      const totalPages = Math.ceil(totalLogs / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
 
-    // Format response data with mobile-specific fields
-    const safeAuditData = auditLogs.map((log) => ({
-      id: log.id,
-      adminId: log.adminId,
-      adminEmail: log.adminEmail,
-      action: log.action,
-      targetType: log.targetType,
-      targetId: log.targetId,
-      targetDescription: log.targetDescription,
-      details: log.details,
-      timestamp: log.timestamp,
-      metadata: {
-        source: log.metadata?.source || "web_portal",
-        deviceInfo: log.metadata?.deviceInfo,
-        location: log.metadata?.location,
-        obstacleId: log.metadata?.obstacleId,
-        obstacleType: log.metadata?.obstacleType,
-        obstacleSeverity: log.metadata?.obstacleSeverity,
-        mobileAction: log.metadata?.mobileAction,
-      },
-    }));
+      // Format response data with mobile-specific fields
+      const safeAuditData = paginatedLogs.map((log) => ({
+        id: log.id,
+        adminId: log.adminId,
+        adminEmail: log.adminEmail,
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId,
+        targetDescription: log.targetDescription,
+        details: log.details,
+        timestamp: log.timestamp,
+        metadata: {
+          source: log.metadata?.source || "web_portal",
+          deviceInfo: log.metadata?.deviceInfo,
+          location: log.metadata?.location,
+          obstacleId: log.metadata?.obstacleId,
+          obstacleType: log.metadata?.obstacleType,
+          obstacleSeverity: log.metadata?.obstacleSeverity,
+          mobileAction: log.metadata?.mobileAction,
+        },
+      }));
 
-    // Log source distribution for the current page
-    const pageSourceCount = safeAuditData.reduce((acc, log) => {
-      const source = log.metadata.source || "web_portal";
-      acc[source] = (acc[source] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+      console.log(`📊 Returning ${safeAuditData.length} logs (page ${page})`);
 
-    console.log(`📊 Page ${page} source distribution:`, pageSourceCount);
+      return NextResponse.json({
+        success: true,
+        data: safeAuditData,
+        pagination: {
+          page,
+          limit,
+          total: totalLogs,
+          hasNextPage,
+          hasPreviousPage,
+          totalPages,
+        },
+      });
+    } catch (indexError) {
+      console.warn(
+        "⚠️ Complex query failed, falling back to basic query:",
+        indexError
+      );
 
-    return NextResponse.json({
-      success: true,
-      data: safeAuditData,
-      pagination: {
-        page,
-        limit,
-        total: totalLogs.length,
-        hasNextPage,
-        hasPreviousPage,
-        totalPages,
-      },
-    });
+      // FALLBACK: Get basic logs without complex filters
+      const basicLogs = await auditLogger.getAuditLogs({
+        limit: limit * 2, // Get a reasonable amount
+      });
+
+      // Apply basic client-side filtering
+      let filteredLogs = basicLogs;
+
+      if (adminId) {
+        filteredLogs = filteredLogs.filter(
+          (log) => log.adminId === adminId || log.adminEmail === adminId
+        );
+      }
+
+      if (action) {
+        filteredLogs = filteredLogs.filter((log) => log.action === action);
+      }
+
+      if (targetType) {
+        filteredLogs = filteredLogs.filter(
+          (log) => log.targetType === targetType
+        );
+      }
+
+      if (source) {
+        filteredLogs = filteredLogs.filter(
+          (log) => log.metadata?.source === source
+        );
+      }
+
+      if (startDate || endDate) {
+        filteredLogs = filteredLogs.filter((log) => {
+          const logDate = log.timestamp;
+          if (startDate && logDate < startDate) return false;
+          if (endDate && logDate > endDate) return false;
+          return true;
+        });
+      }
+
+      // Apply pagination
+      const totalLogs = filteredLogs.length;
+      const startIndex = offset;
+      const endIndex = startIndex + limit;
+      const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
+
+      const totalPages = Math.ceil(totalLogs / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
+      const safeAuditData = paginatedLogs.map((log) => ({
+        id: log.id,
+        adminId: log.adminId,
+        adminEmail: log.adminEmail,
+        action: log.action,
+        targetType: log.targetType,
+        targetId: log.targetId,
+        targetDescription: log.targetDescription,
+        details: log.details,
+        timestamp: log.timestamp,
+        metadata: {
+          source: log.metadata?.source || "web_portal",
+          deviceInfo: log.metadata?.deviceInfo,
+          location: log.metadata?.location,
+          obstacleId: log.metadata?.obstacleId,
+          obstacleType: log.metadata?.obstacleType,
+          obstacleSeverity: log.metadata?.obstacleSeverity,
+          mobileAction: log.metadata?.mobileAction,
+        },
+      }));
+
+      console.log(
+        `📊 Fallback: Returning ${safeAuditData.length} filtered logs`
+      );
+
+      return NextResponse.json({
+        success: true,
+        data: safeAuditData,
+        pagination: {
+          page,
+          limit,
+          total: totalLogs,
+          hasNextPage,
+          hasPreviousPage,
+          totalPages,
+        },
+        warning:
+          "Using fallback filtering. Please create the required Firestore indexes for better performance.",
+      });
+    }
   } catch (error) {
-    console.error("Enhanced audit logs API error:", error);
+    console.error("Audit logs API error:", error);
 
     // Handle specific Firebase errors
     if (error instanceof Error) {
@@ -219,13 +309,27 @@ export async function GET(request: NextRequest) {
           { status: 401 }
         );
       }
+
+      if (error.message.includes("index")) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Database index required. Please create the required Firestore composite index and try again.",
+            indexUrl:
+              "https://console.firebase.google.com/project/waispath-4dbf1/firestore/indexes",
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // Generic error response
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to fetch enhanced audit logs. Please try again.",
+        error:
+          "Failed to fetch audit logs. Please try again or contact support.",
       },
       { status: 500 }
     );

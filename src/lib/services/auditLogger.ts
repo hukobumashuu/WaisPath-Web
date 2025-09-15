@@ -1,10 +1,10 @@
 // src/lib/services/auditLogger.ts
-// COMPLETE FIX: Ensures both web and mobile logs are visible by default
+// CLEANED: Removed redundant actions, kept only functional ones
 
 import { getAdminDb } from "../firebase/admin";
 import type { Firestore } from "firebase-admin/firestore";
 
-// ENHANCED: Extended audit log entry interface with mobile support
+// CLEANED: Extended audit log entry interface with mobile support
 export interface AuditLogEntry {
   id?: string;
   adminId: string;
@@ -38,16 +38,9 @@ export interface AuditLogEntry {
   userAgent?: string;
 }
 
-// ENHANCED: Combined audit action types (web + mobile + priority)
+// CLEANED: Main audit action types - removed redundant obstacle actions
 export type AuditActionType =
-  // Obstacle actions
-  | "obstacle_verified"
-  | "obstacle_rejected"
-  | "obstacle_resolved"
-  | "obstacle_bulk_action"
-  | "obstacle_false_report"
-
-  // Priority Dashboard actions
+  // Priority Dashboard actions (these are the MAIN obstacle actions)
   | "priority_obstacle_verified"
   | "priority_obstacle_rejected"
   | "priority_obstacle_resolved"
@@ -60,13 +53,13 @@ export type AuditActionType =
   | "admin_profile_updated"
   | "admin_password_changed"
 
-  // User actions
+  // User management actions
   | "user_suspended"
   | "user_unsuspended"
   | "user_profile_viewed"
   | "user_reports_reviewed"
 
-  // Admin actions
+  // Admin management actions
   | "admin_created"
   | "admin_deactivated"
   | "admin_reactivated"
@@ -88,19 +81,12 @@ export type MobileAdminActionType =
   | "mobile_app_launch"
   | "mobile_location_access";
 
-// ENHANCED: Combined action descriptions
+// CLEANED: Action descriptions - removed redundant descriptions
 const ACTION_DESCRIPTIONS: Record<
   AuditActionType | MobileAdminActionType,
   string
 > = {
-  // Web obstacle actions
-  obstacle_verified: "Verified obstacle report",
-  obstacle_rejected: "Rejected obstacle report as false",
-  obstacle_resolved: "Marked obstacle as resolved/fixed",
-  obstacle_bulk_action: "Performed bulk action on obstacles",
-  obstacle_false_report: "Flagged obstacle as false report",
-
-  // Priority Dashboard actions
+  // Priority Dashboard actions (main obstacle management)
   priority_obstacle_verified: "Verified obstacle via Priority Dashboard",
   priority_obstacle_rejected: "Rejected obstacle via Priority Dashboard",
   priority_obstacle_resolved: "Resolved obstacle via Priority Dashboard",
@@ -113,20 +99,20 @@ const ACTION_DESCRIPTIONS: Record<
   admin_profile_updated: "Updated admin profile information",
   admin_password_changed: "Changed admin password",
 
-  // Web user actions
+  // User management actions
   user_suspended: "Suspended user account",
   user_unsuspended: "Unsuspended user account",
   user_profile_viewed: "Viewed user profile details",
   user_reports_reviewed: "Reviewed user's obstacle reports",
 
-  // Web admin actions
+  // Admin management actions
   admin_created: "Created new admin account",
   admin_deactivated: "Deactivated admin account",
   admin_reactivated: "Reactivated admin account",
   admin_role_changed: "Changed admin role/permissions",
   admin_permissions_updated: "Updated admin permissions",
 
-  // Web system actions
+  // System actions
   system_settings_changed: "Modified system settings",
   report_generated: "Generated analytics report",
   data_exported: "Exported system data",
@@ -141,42 +127,53 @@ const ACTION_DESCRIPTIONS: Record<
   mobile_location_access: "Granted location access permission",
 };
 
-// Filter options for UI (including mobile + priority actions)
+// CLEANED: Filter options matching actual system actions
 export const AUDIT_FILTER_OPTIONS = {
   actions: [
     { value: "", label: "All Actions" },
-    // Web actions
-    { value: "obstacle_verified", label: "Obstacle Verified" },
-    { value: "obstacle_rejected", label: "Obstacle Rejected" },
-    { value: "obstacle_resolved", label: "Obstacle Resolved" },
-    { value: "admin_created", label: "Admin Created" },
-    // Priority Dashboard actions
-    {
-      value: "priority_obstacle_verified",
-      label: "Priority: Obstacle Verified",
-    },
-    {
-      value: "priority_obstacle_rejected",
-      label: "Priority: Obstacle Rejected",
-    },
-    {
-      value: "priority_obstacle_resolved",
-      label: "Priority: Obstacle Resolved",
-    },
+
+    // Priority Dashboard Actions (main obstacle management)
+    { value: "priority_obstacle_verified", label: "Obstacle Verified" },
+    { value: "priority_obstacle_rejected", label: "Obstacle Rejected" },
+    { value: "priority_obstacle_resolved", label: "Obstacle Resolved" },
     {
       value: "priority_dashboard_accessed",
-      label: "Priority: Dashboard Accessed",
+      label: "Priority Dashboard Accessed",
     },
-    // Authentication actions
+
+    // Admin Management Actions
+    { value: "admin_created", label: "Admin Created" },
+    { value: "admin_deactivated", label: "Admin Deactivated" },
+    { value: "admin_reactivated", label: "Admin Reactivated" },
+    { value: "admin_role_changed", label: "Admin Role Changed" },
+    { value: "admin_permissions_updated", label: "Admin Permissions Updated" },
+
+    // Authentication Actions
     { value: "admin_signin_web", label: "Web Sign In" },
     { value: "admin_signout_web", label: "Web Sign Out" },
-    { value: "admin_signin_failed", label: "Web Sign In Failed" },
+    { value: "admin_signin_failed", label: "Sign In Failed" },
     { value: "admin_profile_updated", label: "Profile Updated" },
     { value: "admin_password_changed", label: "Password Changed" },
-    // Mobile actions
+
+    // User Management Actions
+    { value: "user_suspended", label: "User Suspended" },
+    { value: "user_unsuspended", label: "User Unsuspended" },
+    { value: "user_profile_viewed", label: "User Profile Viewed" },
+    { value: "user_reports_reviewed", label: "User Reports Reviewed" },
+
+    // System Actions
+    { value: "system_settings_changed", label: "System Settings Changed" },
+    { value: "report_generated", label: "Report Generated" },
+    { value: "data_exported", label: "Data Exported" },
+    { value: "bulk_import_performed", label: "Bulk Import Performed" },
+
+    // Mobile Actions
     { value: "mobile_admin_signin", label: "Mobile Sign In" },
     { value: "mobile_admin_signout", label: "Mobile Sign Out" },
     { value: "mobile_obstacle_report", label: "Mobile Obstacle Report" },
+    { value: "mobile_obstacle_verify", label: "Mobile Obstacle Verify" },
+    { value: "mobile_app_launch", label: "Mobile App Launch" },
+    { value: "mobile_location_access", label: "Mobile Location Access" },
   ],
   targetTypes: [
     { value: "", label: "All Targets" },
@@ -241,14 +238,11 @@ class AuditLogger {
   }
 
   /**
-   * Get audit logs with filtering and pagination - FIXED to properly handle offset
+   * Get audit logs with simplified query building to avoid complex index requirements
    */
   async getAuditLogs(options: AuditLogOptions = {}): Promise<AuditLogEntry[]> {
     try {
-      // Start with basic query ordering by timestamp
-      let query = this.db.collection("audit_logs").orderBy("timestamp", "desc");
-
-      console.log("🔍 Building audit query with options:", {
+      console.log("🔍 Building simplified audit query with options:", {
         adminId: options.adminId,
         action: options.action,
         targetType: options.targetType,
@@ -258,67 +252,66 @@ class AuditLogger {
         offset: options.offset,
       });
 
-      // Apply server-side filters
+      // Start with basic query ordering by timestamp
+      let query = this.db.collection("audit_logs").orderBy("timestamp", "desc");
+
+      // Apply filters one at a time to avoid complex composite index requirements
       if (options.adminId) {
         query = query.where("adminId", "==", options.adminId);
-        console.log(`  ➡️ Filtering by adminId: ${options.adminId}`);
       }
 
       if (options.action) {
         query = query.where("action", "==", options.action);
-        console.log(`  ➡️ Filtering by action: ${options.action}`);
       }
 
       if (options.targetType) {
         query = query.where("targetType", "==", options.targetType);
-        console.log(`  ➡️ Filtering by targetType: ${options.targetType}`);
       }
 
+      // Handle source filtering separately to avoid complex composite indexes
+      if (options.source) {
+        query = query.where("metadata.source", "==", options.source);
+      }
+
+      // Handle date range filtering
       if (options.startDate) {
         query = query.where("timestamp", ">=", options.startDate);
-        console.log(
-          `  ➡️ Filtering by startDate: ${options.startDate.toISOString()}`
-        );
       }
 
       if (options.endDate) {
         query = query.where("timestamp", "<=", options.endDate);
-        console.log(
-          `  ➡️ Filtering by endDate: ${options.endDate.toISOString()}`
-        );
       }
 
-      // Handle source filtering with composite index
-      if (options.source) {
-        console.log(`  ➡️ Filtering by source: ${options.source}`);
-        query = query.where("metadata.source", "==", options.source);
-      }
-
-      // Apply offset for pagination (skip documents)
-      if (options.offset && options.offset > 0) {
-        query = query.offset(options.offset);
-        console.log(`  ➡️ Skipping first ${options.offset} documents`);
-      }
-
-      // Apply limit
+      // Apply limit if specified
       if (options.limit) {
         query = query.limit(options.limit);
-        console.log(`  ➡️ Limiting to: ${options.limit} documents`);
       }
 
-      console.log("🔍 Executing Firestore query...");
+      // Apply offset if specified (for pagination)
+      if (options.offset && options.offset > 0) {
+        query = query.offset(options.offset);
+      }
+
+      console.log("🔍 Executing simplified Firestore query...");
       const snapshot = await query.get();
 
       const logs = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
-          ...data,
+          adminId: data.adminId,
+          adminEmail: data.adminEmail,
+          action: data.action,
+          targetType: data.targetType,
+          targetId: data.targetId,
+          targetDescription: data.targetDescription,
+          details: data.details,
           timestamp: data.timestamp.toDate(),
-        };
-      }) as AuditLogEntry[];
+          metadata: data.metadata || {},
+        } as AuditLogEntry;
+      });
 
-      console.log(`✅ Retrieved ${logs.length} audit logs`);
+      console.log(`📄 Retrieved ${logs.length} audit logs`);
 
       // Log source distribution for debugging
       const sourceCount = logs.reduce((acc, log) => {
@@ -337,21 +330,7 @@ class AuditLogger {
   }
 
   /**
-   * Get audit logs for mobile admins only
-   */
-  async getMobileAuditLogs(
-    options: AuditLogOptions = {}
-  ): Promise<AuditLogEntry[]> {
-    const mobileOptions = {
-      ...options,
-      source: "mobile_app" as const,
-    };
-
-    return this.getAuditLogs(mobileOptions);
-  }
-
-  /**
-   * Get audit statistics (includes mobile stats)
+   * Get audit statistics with mobile analytics
    */
   async getAuditStats(timeframe: "24h" | "7d" | "30d" = "7d"): Promise<{
     totalActions: number;
@@ -363,74 +342,77 @@ class AuditLogger {
     recentActions: AuditLogEntry[];
   }> {
     try {
-      // Set timeframe
+      // Calculate date range
       const now = new Date();
       const startDate = new Date();
+
       switch (timeframe) {
         case "24h":
-          startDate.setHours(now.getHours() - 24);
+          startDate.setHours(startDate.getHours() - 24);
           break;
         case "7d":
-          startDate.setDate(now.getDate() - 7);
+          startDate.setDate(startDate.getDate() - 7);
           break;
         case "30d":
-          startDate.setDate(now.getDate() - 30);
+          startDate.setDate(startDate.getDate() - 30);
           break;
       }
 
+      // Get all logs within timeframe
       const logs = await this.getAuditLogs({
         startDate,
         endDate: now,
-        limit: 1000,
+        limit: 1000, // Reasonable limit for stats
       });
 
       // Calculate statistics
-      const actionsByType: Record<string, number> = {};
-      const adminActionCounts: Record<string, number> = {};
-      let webActions = 0;
-      let mobileActions = 0;
+      const totalActions = logs.length;
+      const mobileActions = logs.filter(
+        (log) => log.metadata?.source === "mobile_app"
+      ).length;
+      const webActions = totalActions - mobileActions;
 
-      logs.forEach((log) => {
-        // Count by action type
-        actionsByType[log.action] = (actionsByType[log.action] || 0) + 1;
+      // Actions by type
+      const actionsByType = logs.reduce((acc, log) => {
+        acc[log.action] = (acc[log.action] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
 
-        // Count by admin
-        adminActionCounts[log.adminEmail] =
-          (adminActionCounts[log.adminEmail] || 0) + 1;
+      // Actions by source
+      const actionsBySource = {
+        web_portal: webActions,
+        mobile_app: mobileActions,
+      };
 
-        // Count by source
-        const source = log.metadata?.source || "web_portal";
-        if (source === "mobile_app") {
-          mobileActions++;
-        } else {
-          webActions++;
-        }
-      });
+      // Top admins
+      const adminCounts = logs.reduce((acc, log) => {
+        acc[log.adminEmail] = (acc[log.adminEmail] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
 
-      // Get top admins
-      const topAdmins = Object.entries(adminActionCounts)
-        .map(([email, count]) => ({ adminEmail: email, actionCount: count }))
-        .sort((a, b) => b.actionCount - a.actionCount)
-        .slice(0, 5);
+      const topAdmins = Object.entries(adminCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([adminEmail, actionCount]) => ({ adminEmail, actionCount }));
+
+      // Recent actions (last 10)
+      const recentActions = logs.slice(0, 10);
 
       const stats = {
-        totalActions: logs.length,
+        totalActions,
         webActions,
         mobileActions,
         actionsByType,
-        actionsBySource: {
-          web_portal: webActions,
-          mobile_app: mobileActions,
-        },
+        actionsBySource,
         topAdmins,
-        recentActions: logs.slice(0, 10),
+        recentActions,
       };
 
       console.log("📊 Generated audit stats:", {
-        totalActions: stats.totalActions,
-        webActions: stats.webActions,
-        mobileActions: stats.mobileActions,
-        sourceBreakdown: stats.actionsBySource,
+        totalActions,
+        webActions,
+        mobileActions,
+        sourceBreakdown: actionsBySource,
       });
 
       return stats;
@@ -441,87 +423,15 @@ class AuditLogger {
   }
 
   /**
-   * Get mobile admin activity summary
+   * Helper methods for priority dashboard actions (main obstacle management)
    */
-  async getMobileAdminSummary(
-    adminEmail?: string,
-    timeframe: "24h" | "7d" | "30d" = "7d"
-  ): Promise<{
-    totalMobileActions: number;
-    signIns: number;
-    signOuts: number;
-    obstacleReports: number;
-    lastActivity?: Date;
-    deviceInfo?: {
-      platform: string;
-      deviceModel: string;
-      appVersion: string;
-    };
-  }> {
-    try {
-      // Set timeframe
-      const now = new Date();
-      const startDate = new Date();
-      switch (timeframe) {
-        case "24h":
-          startDate.setHours(now.getHours() - 24);
-          break;
-        case "7d":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "30d":
-          startDate.setDate(now.getDate() - 30);
-          break;
-      }
-
-      const logs = await this.getMobileAuditLogs({
-        startDate,
-        endDate: now,
-      });
-
-      // Filter by admin email if provided
-      const filteredLogs = adminEmail
-        ? logs.filter((log) => log.adminEmail === adminEmail)
-        : logs;
-
-      const summary = {
-        totalMobileActions: filteredLogs.length,
-        signIns: filteredLogs.filter(
-          (log) => log.action === "mobile_admin_signin"
-        ).length,
-        signOuts: filteredLogs.filter(
-          (log) => log.action === "mobile_admin_signout"
-        ).length,
-        obstacleReports: filteredLogs.filter(
-          (log) => log.action === "mobile_obstacle_report"
-        ).length,
-        lastActivity:
-          filteredLogs.length > 0 ? filteredLogs[0].timestamp : undefined,
-        deviceInfo:
-          filteredLogs.length > 0
-            ? filteredLogs[0].metadata?.deviceInfo
-            : undefined,
-      };
-
-      return summary;
-    } catch (error) {
-      console.error("Failed to get mobile admin summary:", error);
-      return {
-        totalMobileActions: 0,
-        signIns: 0,
-        signOuts: 0,
-        obstacleReports: 0,
-      };
-    }
-  }
-
-  /**
-   * Helper methods for common audit actions
-   */
-  async logObstacleAction(
+  async logPriorityAction(
     adminId: string,
     adminEmail: string,
-    action: "obstacle_verified" | "obstacle_rejected" | "obstacle_resolved",
+    action:
+      | "priority_obstacle_verified"
+      | "priority_obstacle_rejected"
+      | "priority_obstacle_resolved",
     obstacleId: string,
     obstacleType: string,
     details?: string
@@ -558,47 +468,87 @@ class AuditLogger {
     });
   }
 
-  async logUserAction(
+  async logAuthAction(
     adminId: string,
     adminEmail: string,
-    action: "user_suspended" | "user_unsuspended" | "user_profile_viewed",
-    userId: string,
-    userEmail: string,
-    details?: string
-  ): Promise<void> {
-    await this.logAction({
-      adminId,
-      adminEmail,
-      action,
-      targetType: "user",
-      targetId: userId,
-      targetDescription: userEmail,
-      details: details || `${ACTION_DESCRIPTIONS[action]} for ${userEmail}`,
-    });
-  }
-
-  async logSystemAction(
-    adminId: string,
-    adminEmail: string,
-    action: "system_settings_changed" | "report_generated" | "data_exported",
-    details: string,
+    action: "admin_signin_web" | "admin_signout_web",
+    details?: string,
     metadata?: Record<string, unknown>
   ): Promise<void> {
     await this.logAction({
       adminId,
       adminEmail,
       action,
-      targetType: "system",
-      targetId: "system",
-      targetDescription: "System operation",
-      details,
-      metadata,
+      targetType: "admin",
+      targetId: adminId,
+      targetDescription: adminEmail,
+      details: details || ACTION_DESCRIPTIONS[action],
+      metadata: {
+        source: "web_portal",
+        ...metadata,
+      },
     });
+  }
+
+  /**
+   * Get mobile admin summary
+   */
+  async getMobileAdminSummary(
+    adminEmail: string,
+    timeframe: "24h" | "7d" | "30d" = "7d"
+  ): Promise<{
+    totalMobileActions: number;
+    lastMobileActivity: Date | null;
+    mobileActionBreakdown: Record<string, number>;
+  }> {
+    try {
+      // Calculate date range
+      const now = new Date();
+      const startDate = new Date();
+
+      switch (timeframe) {
+        case "24h":
+          startDate.setHours(startDate.getHours() - 24);
+          break;
+        case "7d":
+          startDate.setDate(startDate.getDate() - 7);
+          break;
+        case "30d":
+          startDate.setDate(startDate.getDate() - 30);
+          break;
+      }
+
+      // Get mobile logs for specific admin
+      const logs = await this.getAuditLogs({
+        source: "mobile_app",
+        startDate,
+        endDate: now,
+      });
+
+      // Filter by admin email
+      const adminLogs = logs.filter((log) => log.adminEmail === adminEmail);
+
+      const totalMobileActions = adminLogs.length;
+      const lastMobileActivity =
+        adminLogs.length > 0 ? adminLogs[0].timestamp : null;
+
+      // Mobile action breakdown
+      const mobileActionBreakdown = adminLogs.reduce((acc, log) => {
+        acc[log.action] = (acc[log.action] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return {
+        totalMobileActions,
+        lastMobileActivity,
+        mobileActionBreakdown,
+      };
+    } catch (error) {
+      console.error("Failed to get mobile admin summary:", error);
+      throw error;
+    }
   }
 }
 
 // Export singleton instance
 export const auditLogger = new AuditLogger();
-
-// Export the class for potential direct instantiation
-export default AuditLogger;

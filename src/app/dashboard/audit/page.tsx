@@ -1,5 +1,5 @@
 // src/app/dashboard/audit/page.tsx
-// REFACTORED: Clean, modular audit page with enhanced UI/UX - Fixed TypeScript errors
+// UPDATED: Responsive design matching current version with fixed filters and pagination
 
 "use client";
 
@@ -11,12 +11,11 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ShieldCheckIcon,
-  ClockIcon,
 } from "@heroicons/react/24/outline";
 import toast, { Toaster } from "react-hot-toast";
 import { getAuth } from "firebase/auth";
 
-// Import our new components
+// Import our components
 import AuditStatsCards from "@/components/admin/AuditStatsCards";
 import AuditFiltersPanel from "@/components/admin/AuditFiltersPanel";
 import AuditLogTable from "@/components/admin/AuditLogTable";
@@ -93,13 +92,16 @@ interface FilterState {
   search: string;
 }
 
-// Helper functions
+// Helper function to get auth token
 const getAuthToken = async (): Promise<string | null> => {
   try {
     const auth = getAuth();
     const user = auth.currentUser;
-    if (!user) throw new Error("No authenticated user");
-    return await user.getIdToken();
+    if (!user) {
+      throw new Error("No authenticated user");
+    }
+    const idToken = await user.getIdToken();
+    return idToken;
   } catch (error) {
     console.error("Failed to get auth token:", error);
     return null;
@@ -110,21 +112,19 @@ export default function AuditLogsPage() {
   const { user, loading, hasPermission, hasRole } = useAdminAuth();
   const router = useRouter();
 
-  // State
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditStats, setAuditStats] = useState<AuditStats | null>(null);
-  const [adminNames, setAdminNames] = useState<Record<string, string>>({});
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Pagination
+  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
 
-  // Filters
+  // FIXED: Separate form filters from applied filters
   const [filters, setFilters] = useState<FilterState>({
     adminEmail: "",
     action: "",
@@ -135,80 +135,90 @@ export default function AuditLogsPage() {
     search: "",
   });
 
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>({
+    adminEmail: "",
+    action: "",
+    targetType: "",
+    source: "",
+    startDate: "",
+    endDate: "",
+    search: "",
+  });
+
+  // Admin names for display
+  const [adminNames, setAdminNames] = useState<Record<string, string>>({});
+
+  // Stats timeframe
   const [statsTimeframe, setStatsTimeframe] = useState<"24h" | "7d" | "30d">(
     "7d"
   );
 
-  // Permission check
+  // Check permissions
   const canViewAuditLogs =
     hasPermission("audit:read") ||
     hasRole("super_admin") ||
     hasRole("lgu_admin");
 
-  // Load admin names for enhanced display
-  const loadAdminNames = useCallback(async () => {
-    try {
-      if (user?.displayName && user?.email && user?.uid) {
-        setAdminNames((prev) => ({
-          ...prev,
-          [user.uid]: user.displayName!,
-          [user.email!]: user.displayName!,
-        }));
-      }
-    } catch (error) {
-      console.warn("Failed to load admin names:", error);
-    }
-  }, [user?.displayName, user?.email, user?.uid]);
-
-  // Load audit logs
+  // Load audit logs using appliedFilters
   const loadAuditLogs = useCallback(async () => {
+    if (!canViewAuditLogs) return;
+
     try {
       setLoadingLogs(true);
+
       const authToken = await getAuthToken();
       if (!authToken) {
-        toast.error("Authentication error. Please refresh and try again.");
+        toast.error("Authentication error. Please sign in again.");
         return;
       }
 
+      // Build query parameters using appliedFilters
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: "25",
       });
 
-      if (filters.adminEmail) params.append("adminId", filters.adminEmail);
-      if (filters.action) params.append("action", filters.action);
-      if (filters.targetType) params.append("targetType", filters.targetType);
-      if (filters.source) params.append("source", filters.source);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
+      if (appliedFilters.adminEmail) {
+        params.append("adminId", appliedFilters.adminEmail);
+      }
+      if (appliedFilters.action) {
+        params.append("action", appliedFilters.action);
+      }
+      if (appliedFilters.targetType) {
+        params.append("targetType", appliedFilters.targetType);
+      }
+      if (appliedFilters.source) {
+        params.append("source", appliedFilters.source);
+      }
+      if (appliedFilters.startDate) {
+        params.append("startDate", appliedFilters.startDate);
+      }
+      if (appliedFilters.endDate) {
+        params.append("endDate", appliedFilters.endDate);
+      }
 
-      const response = await fetch(`/api/audit/logs?${params}`, {
+      const response = await fetch(`/api/audit/logs?${params.toString()}`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
       });
 
       const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "Failed to fetch audit logs");
 
-      if (result.success) {
+      if (response.ok && result.success) {
         const logs = result.data.map(
           (log: {
             id: string;
             adminId: string;
             adminEmail: string;
             action: string;
-            targetType: "obstacle" | "user" | "admin" | "system";
+            targetType: string;
             targetId: string;
             targetDescription?: string;
             details: string;
             timestamp: string;
-            metadata?: {
-              source?: "web_portal" | "mobile_app";
-              deviceInfo?: DeviceInfo;
-              location?: LocationInfo;
-              [key: string]: unknown;
-            };
+            metadata?: Record<string, unknown>;
           }) => ({
             ...log,
             timestamp: new Date(log.timestamp),
@@ -219,6 +229,9 @@ export default function AuditLogsPage() {
         setTotalPages(result.pagination.totalPages);
         setHasNextPage(result.pagination.hasNextPage);
         setHasPreviousPage(result.pagination.hasPreviousPage);
+      } else {
+        console.error("Failed to load audit logs:", result.error);
+        toast.error(result.error || "Failed to load audit logs");
       }
     } catch (error) {
       console.error("Failed to load audit logs:", error);
@@ -226,10 +239,12 @@ export default function AuditLogsPage() {
     } finally {
       setLoadingLogs(false);
     }
-  }, [currentPage, filters]);
+  }, [currentPage, appliedFilters, canViewAuditLogs]);
 
   // Load audit statistics
   const loadAuditStats = useCallback(async () => {
+    if (!canViewAuditLogs) return;
+
     try {
       setLoadingStats(true);
       const authToken = await getAuthToken();
@@ -252,7 +267,58 @@ export default function AuditLogsPage() {
     } finally {
       setLoadingStats(false);
     }
-  }, [statsTimeframe]);
+  }, [statsTimeframe, canViewAuditLogs]);
+
+  // Load admin names for display
+  const loadAdminNames = useCallback(async () => {
+    if (auditLogs.length === 0) return;
+
+    try {
+      const uniqueAdmins = Array.from(
+        new Set([
+          ...auditLogs.map((log) => log.adminEmail),
+          ...auditLogs.map((log) => log.adminId),
+        ])
+      );
+
+      const names: Record<string, string> = {};
+      uniqueAdmins.forEach((identifier) => {
+        if (identifier && identifier.includes("@")) {
+          names[identifier] = identifier;
+        }
+      });
+
+      setAdminNames(names);
+    } catch (error) {
+      console.error("Failed to load admin names:", error);
+    }
+  }, [auditLogs]);
+
+  // FIXED: Handle filter submission (apply only when form submitted)
+  const handleFilterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAppliedFilters({ ...filters });
+    setCurrentPage(1);
+    toast.success("Filters applied");
+  };
+
+  // FIXED: Handle filter reset
+  const handleResetFilters = () => {
+    const emptyFilters = {
+      adminEmail: "",
+      action: "",
+      targetType: "",
+      source: "",
+      startDate: "",
+      endDate: "",
+      search: "",
+    };
+
+    setFilters(emptyFilters);
+    setAppliedFilters(emptyFilters);
+    setCurrentPage(1);
+    toast.success("Filters cleared");
+  };
 
   // Effects
   useEffect(() => {
@@ -305,23 +371,22 @@ export default function AuditLogsPage() {
         log.targetDescription || log.targetId,
         log.details,
         log.metadata?.deviceInfo
-          ? `${log.metadata.deviceInfo.platform} - ${log.metadata.deviceInfo.deviceModel}`
-          : "N/A",
+          ? `${log.metadata.deviceInfo.platform} ${log.metadata.deviceInfo.deviceModel}`
+          : "",
         log.metadata?.location
           ? `${log.metadata.location.latitude}, ${log.metadata.location.longitude}`
-          : "N/A",
+          : "",
       ]);
 
-      const csvContent = [
-        csvHeaders.join(","),
-        ...csvRows.map((row) => row.map((field) => `"${field}"`).join(",")),
-      ].join("\n");
+      const csvContent = [csvHeaders, ...csvRows]
+        .map((row) => row.map((cell) => `"${cell}"`).join(","))
+        .join("\n");
 
       const blob = new Blob([csvContent], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `waispath-audit-logs-${
+      link.download = `audit-logs-${
         new Date().toISOString().split("T")[0]
       }.csv`;
       document.body.appendChild(link);
@@ -331,65 +396,45 @@ export default function AuditLogsPage() {
 
       toast.success("Audit logs exported successfully");
     } catch (error) {
-      console.error("Failed to export audit logs:", error);
+      console.error("Export failed:", error);
       toast.error("Failed to export audit logs");
     }
   };
 
-  // Filter handlers
-  const handleFilterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCurrentPage(1);
-    loadAuditLogs();
+  // Pagination handlers
+  const handlePreviousPage = () => {
+    if (hasPreviousPage) {
+      setCurrentPage((prev) => prev - 1);
+    }
   };
 
-  const handleResetFilters = () => {
-    setFilters({
-      adminEmail: "",
-      action: "",
-      targetType: "",
-      source: "",
-      startDate: "",
-      endDate: "",
-      search: "",
-    });
-    setCurrentPage(1);
+  const handleNextPage = () => {
+    if (hasNextPage) {
+      setCurrentPage((prev) => prev + 1);
+    }
   };
 
-  // Loading states
   if (loading) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ backgroundColor: PASIG.bg }}
-      >
+      <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div
-            className="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent mx-auto mb-4"
-            style={{ borderColor: PASIG.softBlue }}
-          />
-          <p style={{ color: PASIG.muted }}>Loading audit dashboard...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
         </div>
       </div>
     );
   }
 
-  // Permission check
-  if (!canViewAuditLogs) {
+  if (!user?.isAdmin || !canViewAuditLogs) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ backgroundColor: PASIG.bg }}
-      >
-        <div className="text-center">
-          <ShieldCheckIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Access Denied
-          </h2>
-          <p className="text-gray-600">
-            You don&apos;t have permission to view activity logs.
-          </p>
-        </div>
+      <div className="text-center py-12">
+        <ShieldCheckIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          Access Denied
+        </h2>
+        <p className="text-gray-600">
+          You don&apos;t have permission to view audit logs.
+        </p>
       </div>
     );
   }
@@ -397,103 +442,119 @@ export default function AuditLogsPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: PASIG.bg }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Enhanced Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ backgroundColor: PASIG.primaryNavy }}
-              >
-                <ClockIcon className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1
-                  className="text-3xl font-bold"
-                  style={{ color: PASIG.slate }}
-                >
-                  Activity Logs
-                </h1>
-                <p className="text-lg" style={{ color: PASIG.muted }}>
-                  Monitor admin activities across web portal and mobile app
-                </p>
-              </div>
-            </div>
+        <Toaster position="top-right" />
 
-            <div className="flex items-center space-x-3">
-              {/* Timeframe Selector */}
-              <select
-                value={statsTimeframe}
-                onChange={(e) =>
-                  setStatsTimeframe(e.target.value as "24h" | "7d" | "30d")
-                }
-                className="px-4 py-2 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200 text-gray-900 bg-white"
-                style={{ borderColor: PASIG.subtleBorder }}
-              >
-                <option value="24h">Last 24 Hours</option>
-                <option value="7d">Last 7 Days</option>
-                <option value="30d">Last 30 Days</option>
-              </select>
+        {/* Responsive Header */}
+        <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 mb-8">
+          <div>
+            <h1
+              className="text-2xl sm:text-3xl font-bold"
+              style={{ color: PASIG.slate }}
+            >
+              Activity Logs
+            </h1>
+            <p
+              className="mt-1 text-sm sm:text-base"
+              style={{ color: PASIG.muted }}
+            >
+              Monitor admin actions and system activity
+            </p>
+          </div>
 
-              {/* Export Button */}
-              <button
-                onClick={handleExport}
-                disabled={auditLogs.length === 0}
-                className="flex items-center gap-2 px-4 py-2 text-white rounded-xl transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: PASIG.primaryNavy }}
-              >
-                <ArrowDownTrayIcon className="h-5 w-5" />
-                Export CSV
-              </button>
-            </div>
+          <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
+            {/* Stats Timeframe Selector */}
+            <select
+              value={statsTimeframe}
+              onChange={(e) =>
+                setStatsTimeframe(e.target.value as "24h" | "7d" | "30d")
+              }
+              className="w-full sm:w-auto px-3 py-2 border rounded-lg text-sm"
+              style={{
+                borderColor: PASIG.subtleBorder,
+                backgroundColor: PASIG.card,
+                color: PASIG.slate,
+              }}
+            >
+              <option value="24h">Last 24 Hours</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+            </select>
+
+            {/* Export Button */}
+            <button
+              onClick={handleExport}
+              disabled={auditLogs.length === 0}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white rounded-xl transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: PASIG.primaryNavy }}
+            >
+              <ArrowDownTrayIcon className="h-5 w-5" />
+              Export CSV
+            </button>
           </div>
         </div>
 
         {/* Statistics Cards */}
         {auditStats && (
-          <AuditStatsCards stats={auditStats} loading={loadingStats} />
+          <div className="mb-8">
+            <AuditStatsCards stats={auditStats} loading={loadingStats} />
+          </div>
         )}
 
         {/* Filters Panel */}
-        <AuditFiltersPanel
-          filters={filters}
-          setFilters={setFilters}
-          onSubmit={handleFilterSubmit}
-          onReset={handleResetFilters}
-          show={showFilters}
-          onToggle={() => setShowFilters(!showFilters)}
-        />
+        <div className="mb-8">
+          <AuditFiltersPanel
+            filters={filters}
+            setFilters={setFilters}
+            onSubmit={handleFilterSubmit}
+            onReset={handleResetFilters}
+            show={showFilters}
+            onToggle={() => setShowFilters(!showFilters)}
+          />
+        </div>
 
         {/* Audit Log Table */}
-        <AuditLogTable
-          logs={auditLogs}
-          loading={loadingLogs}
-          adminNames={adminNames}
-        />
+        <div className="mb-8">
+          <AuditLogTable
+            logs={auditLogs}
+            loading={loadingLogs}
+            adminNames={adminNames}
+          />
+        </div>
 
-        {/* Enhanced Pagination */}
+        {/* RESPONSIVE: Enhanced Pagination */}
         {totalPages > 1 && (
-          <div className="mt-6 flex items-center justify-between">
-            <div className="text-sm" style={{ color: PASIG.muted }}>
-              Showing {(currentPage - 1) * 25 + 1} to{" "}
-              {Math.min(currentPage * 25, auditLogs.length)} of{" "}
-              {auditLogs.length} results
+          <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+            <div
+              className="text-sm text-center sm:text-left"
+              style={{ color: PASIG.muted }}
+            >
+              Page {currentPage} of {totalPages}
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center justify-center space-x-1">
+              {/* Previous Button */}
               <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                onClick={handlePreviousPage}
                 disabled={!hasPreviousPage}
-                className="p-2 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ borderColor: PASIG.subtleBorder }}
+                className="flex items-center gap-1 px-3 py-2 text-sm font-medium border rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                style={{
+                  borderColor: PASIG.subtleBorder,
+                  backgroundColor: PASIG.card,
+                  color: PASIG.slate,
+                }}
               >
-                <ChevronLeftIcon className="h-5 w-5" />
+                <ChevronLeftIcon className="h-4 w-4" />
+                <span className="hidden sm:inline">Previous</span>
               </button>
 
-              <div className="flex items-center space-x-1">
+              {/* Page Numbers - Responsive */}
+              <div className="hidden sm:flex items-center space-x-1">
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum = i + 1;
-                  if (totalPages > 5) {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else {
+                    // Smart pagination for large page counts
                     if (currentPage <= 3) {
                       pageNum = i + 1;
                     } else if (currentPage >= totalPages - 2) {
@@ -503,20 +564,17 @@ export default function AuditLogsPage() {
                     }
                   }
 
+                  const isActive = pageNum === currentPage;
+
                   return (
                     <button
                       key={pageNum}
                       onClick={() => setCurrentPage(pageNum)}
-                      className={`px-3 py-1 text-sm font-medium rounded-lg transition-colors ${
-                        pageNum === currentPage
-                          ? "text-white"
-                          : "text-gray-500 hover:bg-gray-100"
-                      }`}
+                      className="px-3 py-2 text-sm font-medium rounded-lg transition-colors"
                       style={{
-                        backgroundColor:
-                          pageNum === currentPage
-                            ? PASIG.softBlue
-                            : "transparent",
+                        backgroundColor: isActive ? PASIG.softBlue : PASIG.card,
+                        color: isActive ? "white" : PASIG.slate,
+                        border: `1px solid ${PASIG.subtleBorder}`,
                       }}
                     >
                       {pageNum}
@@ -525,22 +583,32 @@ export default function AuditLogsPage() {
                 })}
               </div>
 
-              <button
-                onClick={() =>
-                  setCurrentPage(Math.min(totalPages, currentPage + 1))
-                }
-                disabled={!hasNextPage}
-                className="p-2 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ borderColor: PASIG.subtleBorder }}
+              {/* Mobile Page Info */}
+              <div
+                className="sm:hidden px-3 py-2 text-sm font-medium"
+                style={{ color: PASIG.slate }}
               >
-                <ChevronRightIcon className="h-5 w-5" />
+                {currentPage} / {totalPages}
+              </div>
+
+              {/* Next Button */}
+              <button
+                onClick={handleNextPage}
+                disabled={!hasNextPage}
+                className="flex items-center gap-1 px-3 py-2 text-sm font-medium border rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                style={{
+                  borderColor: PASIG.subtleBorder,
+                  backgroundColor: PASIG.card,
+                  color: PASIG.slate,
+                }}
+              >
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRightIcon className="h-4 w-4" />
               </button>
             </div>
           </div>
         )}
       </div>
-
-      <Toaster position="top-right" />
     </div>
   );
 }
