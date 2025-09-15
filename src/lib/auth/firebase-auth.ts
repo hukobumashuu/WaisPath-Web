@@ -1,5 +1,5 @@
 // src/lib/auth/firebase-auth.ts
-// ENHANCED: Authentication system with real-time account status checking and automatic signout
+// FIXED: Authentication system with audit logging using client-side Firestore
 
 "use client";
 
@@ -9,8 +9,18 @@ import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  limit,
+  type QuerySnapshot,
+  type DocumentData,
+} from "firebase/firestore";
 import { getFirebaseAuth } from "../firebase/client";
-import { getFirebaseDb } from "../firebase/client"; // Import Firestore
+import { getFirebaseDb } from "../firebase/client";
 import { useState, useEffect, useCallback, useRef } from "react";
 
 // Admin user interface with updated roles
@@ -23,9 +33,9 @@ export interface AdminUser {
     admin?: boolean;
     role?: "super_admin" | "lgu_admin" | "field_admin" | "moderator" | "viewer";
     permissions?: string[];
-    deactivated?: boolean; // NEW: Track deactivated state
+    deactivated?: boolean;
   };
-  accountStatus?: "active" | "deactivated" | "suspended"; // NEW: Real-time status
+  accountStatus?: "active" | "deactivated" | "suspended";
 }
 
 // Custom claims interface with updated roles
@@ -33,8 +43,8 @@ interface FirebaseCustomClaims {
   admin?: boolean;
   role?: "super_admin" | "lgu_admin" | "field_admin" | "moderator" | "viewer";
   permissions?: string[];
-  deactivated?: boolean; // NEW: Track deactivated state
-  [key: string]: unknown;
+  deactivated?: boolean;
+  suspended?: boolean;
 }
 
 // Global auth state
@@ -48,12 +58,67 @@ let globalAuthState: {
   initialized: false,
 };
 
-const globalListeners: Set<(state: typeof globalAuthState) => void> = new Set();
+// Global listeners for auth state changes
+const globalListeners = new Set<(state: typeof globalAuthState) => void>();
+
+// Global auth unsubscribe function
 let authUnsubscribe: (() => void) | null = null;
-let statusUnsubscribe: (() => void) | null = null; // NEW: Status listener
+let statusUnsubscribe: (() => void) | null = null;
 let initializationPromise: Promise<void> | null = null;
 
-// NEW: Function to check account status in Firestore
+// Helper function to log authentication actions
+const logAuthAction = async (
+  action: "signin_success" | "signin_failed" | "signout",
+  email?: string,
+  error?: string
+) => {
+  try {
+    // Get auth token for successful actions
+    let authToken = null;
+    if (action === "signin_success" || action === "signout") {
+      try {
+        const auth = await getFirebaseAuth();
+        const currentUser = auth?.currentUser;
+        if (currentUser) {
+          authToken = await currentUser.getIdToken();
+        }
+      } catch (tokenError) {
+        console.warn("Failed to get auth token for logging:", tokenError);
+      }
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch("/api/audit/auth", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action,
+        email,
+        error,
+      }),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log("📝 Auth audit log created:", result);
+    } else {
+      const error = await response.json();
+      console.warn("Failed to create auth audit log:", error);
+    }
+  } catch (error) {
+    console.warn("Auth audit logging failed:", error);
+    // Don't break the app if audit logging fails
+  }
+};
+
+// Check account status in Firestore (client-side)
 async function checkAccountStatus(
   email: string
 ): Promise<"active" | "deactivated" | "suspended" | null> {
@@ -61,57 +126,64 @@ async function checkAccountStatus(
     const db = await getFirebaseDb();
     if (!db) return null;
 
-    // Query admins collection by email
-    const { collection, query, where, getDocs } = await import(
-      "firebase/firestore"
-    );
     const adminsRef = collection(db, "admins");
-    const q = query(adminsRef, where("email", "==", email));
+    const q = query(adminsRef, where("email", "==", email), limit(1));
     const querySnapshot = await getDocs(q);
 
     if (!querySnapshot.empty) {
       const adminDoc = querySnapshot.docs[0];
-      return adminDoc.data().status || "active";
+      const adminData = adminDoc.data();
+      const status = adminData.status;
+
+      // Type check to ensure it's a valid status
+      if (
+        status === "active" ||
+        status === "deactivated" ||
+        status === "suspended"
+      ) {
+        return status;
+      }
+      return "active"; // Default to active if status is invalid
     }
 
     return null;
   } catch (error) {
-    console.error("Failed to check account status:", error);
+    console.error("Error checking account status:", error);
     return null;
   }
 }
 
-// NEW: Set up real-time status monitoring
-async function setupStatusMonitoring(email: string): Promise<() => void> {
+// Setup status monitoring for real-time account status changes (client-side)
+async function setupStatusMonitoring(
+  email: string
+): Promise<(() => void) | null> {
   try {
     const db = await getFirebaseDb();
-    if (!db) return () => {};
+    if (!db) return null;
 
-    const { collection, query, where, onSnapshot } = await import(
-      "firebase/firestore"
-    );
+    console.log(`👁️ Setting up status monitoring for ${email}`);
+
     const adminsRef = collection(db, "admins");
     const q = query(adminsRef, where("email", "==", email));
 
     return onSnapshot(
       q,
-      (snapshot) => {
+      (snapshot: QuerySnapshot<DocumentData>) => {
         if (!snapshot.empty) {
           const adminDoc = snapshot.docs[0];
-          const status = adminDoc.data().status || "active";
+          const adminData = adminDoc.data();
+          const status = adminData.status;
 
-          // Update global auth state with new status
-          if (globalAuthState.user) {
-            globalAuthState.user.accountStatus = status;
+          console.log(`📊 Status check for ${email}: ${status}`);
 
-            // NEW: Automatic signout for deactivated accounts
-            if (status === "deactivated" || status === "suspended") {
-              console.warn(`🚨 Account ${status}. Signing out...`);
-              handleAccountDeactivation(status);
-            }
-
-            notifyGlobalListeners();
+          if (status === "deactivated" || status === "suspended") {
+            console.warn(
+              `🚨 Account ${status} detected for ${email}. Signing out...`
+            );
+            handleAccountDeactivation(status);
           }
+
+          notifyGlobalListeners();
         }
       },
       (error) => {
@@ -120,11 +192,11 @@ async function setupStatusMonitoring(email: string): Promise<() => void> {
     );
   } catch (error) {
     console.error("Failed to setup status monitoring:", error);
-    return () => {};
+    return null;
   }
 }
 
-// NEW: Handle account deactivation
+// Handle account deactivation
 async function handleAccountDeactivation(
   status: "deactivated" | "suspended"
 ): Promise<void> {
@@ -174,7 +246,7 @@ async function initializeGlobalAuth(): Promise<void> {
 
     try {
       console.log(
-        "🔐 Initializing enhanced Firebase Auth with status monitoring..."
+        "🔐 Initializing enhanced Firebase Auth with audit logging..."
       );
       const auth = await getFirebaseAuth();
 
@@ -205,47 +277,44 @@ async function initializeGlobalAuth(): Promise<void> {
               const isAdmin = claims.admin === true && !claims.deactivated;
 
               if (isAdmin) {
-                // NEW: Check account status in Firestore
+                // Check account status in Firestore
                 const accountStatus = await checkAccountStatus(
                   firebaseUser.email!
                 );
 
-                // Verify account is still active
                 if (
-                  accountStatus === "deactivated" ||
-                  accountStatus === "suspended"
+                  accountStatus &&
+                  accountStatus !== "deactivated" &&
+                  accountStatus !== "suspended"
                 ) {
-                  console.warn(
-                    `🚨 Account ${accountStatus} detected during auth check`
+                  // Setup status monitoring
+                  statusUnsubscribe = await setupStatusMonitoring(
+                    firebaseUser.email!
                   );
-                  await handleAccountDeactivation(accountStatus);
-                  return;
+
+                  // Create admin user object with status
+                  const adminUser: AdminUser = {
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email,
+                    displayName: firebaseUser.displayName,
+                    isAdmin: true,
+                    customClaims: claims,
+                    accountStatus: accountStatus,
+                  };
+
+                  globalAuthState.user = adminUser;
+                  console.log(
+                    "✅ Admin authenticated:",
+                    adminUser.email,
+                    `(${adminUser.accountStatus})`
+                  );
+                } else {
+                  // Account is deactivated or suspended
+                  globalAuthState.user = null;
+                  if (claims.deactivated) {
+                    console.warn("🚨 Deactivated account attempted login");
+                  }
                 }
-
-                // Set up real-time status monitoring
-                if (statusUnsubscribe) {
-                  statusUnsubscribe();
-                }
-                statusUnsubscribe = await setupStatusMonitoring(
-                  firebaseUser.email!
-                );
-
-                // Create admin user object with status
-                const adminUser: AdminUser = {
-                  uid: firebaseUser.uid,
-                  email: firebaseUser.email,
-                  displayName: firebaseUser.displayName,
-                  isAdmin: true,
-                  customClaims: claims,
-                  accountStatus: accountStatus || "active", // NEW: Include status
-                };
-
-                globalAuthState.user = adminUser;
-                console.log(
-                  "✅ Admin authenticated:",
-                  adminUser.email,
-                  `(${adminUser.accountStatus})`
-                );
               } else {
                 // Not an admin or deactivated
                 globalAuthState.user = null;
@@ -298,7 +367,7 @@ function notifyGlobalListeners(): void {
   globalListeners.forEach((listener) => listener({ ...globalAuthState }));
 }
 
-// ENHANCED: Sign in function with status validation
+// ENHANCED: Sign in function with audit logging
 async function signIn(
   email: string,
   password: string
@@ -306,10 +375,12 @@ async function signIn(
   try {
     const auth = await getFirebaseAuth();
     if (!auth) {
+      const error =
+        "Authentication service unavailable. Please refresh the page and try again.";
+      await logAuthAction("signin_failed", email, error);
       return {
         success: false,
-        error:
-          "Authentication service unavailable. Please refresh the page and try again.",
+        error,
       };
     }
 
@@ -328,10 +399,12 @@ async function signIn(
     // Check for deactivated accounts first
     if (claims.deactivated) {
       await signOut();
+      const error =
+        "Your account has been deactivated. Please contact your administrator.";
+      await logAuthAction("signin_failed", email, error);
       return {
         success: false,
-        error:
-          "Your account has been deactivated. Please contact your administrator.",
+        error,
       };
     }
 
@@ -339,37 +412,51 @@ async function signIn(
     const isAdmin = claims.admin === true;
     if (!isAdmin) {
       await signOut();
+      const error = "Access denied. Admin privileges required.";
+      await logAuthAction("signin_failed", email, error);
       return {
         success: false,
-        error: "Access denied. Admin privileges required.",
+        error,
       };
     }
 
-    // NEW: Additional Firestore status check
+    // Additional Firestore status check
     const accountStatus = await checkAccountStatus(email);
     if (accountStatus === "deactivated" || accountStatus === "suspended") {
       await signOut();
       const statusText =
         accountStatus === "deactivated" ? "deactivated" : "suspended";
+      const error = `Your account has been ${statusText}. Please contact your administrator.`;
+      await logAuthAction("signin_failed", email, error);
       return {
         success: false,
-        error: `Your account has been ${statusText}. Please contact your administrator.`,
+        error,
       };
     }
+
+    // SUCCESS: Log successful sign-in
+    await logAuthAction("signin_success", email);
 
     return { success: true };
   } catch (error) {
     console.error("Enhanced sign in error:", error);
+    const errorMessage = getErrorMessage(error as { code: string });
+    await logAuthAction("signin_failed", email, errorMessage);
     return {
       success: false,
-      error: getErrorMessage(error as { code: string }),
+      error: errorMessage,
     };
   }
 }
 
-// Sign out function with cleanup
+// ENHANCED: Sign out function with audit logging
 async function signOut(): Promise<void> {
   try {
+    // Log sign-out before actually signing out
+    if (globalAuthState.user?.email) {
+      await logAuthAction("signout", globalAuthState.user.email);
+    }
+
     // Clean up status monitoring
     if (statusUnsubscribe) {
       statusUnsubscribe();
@@ -410,7 +497,7 @@ function getErrorMessage(error: { code: string }): string {
   }
 }
 
-// ENHANCED: React hook for authentication with status monitoring
+// React hook for authentication with status monitoring
 export function useAdminAuth() {
   const [authState, setAuthState] = useState(globalAuthState);
   const listenerRef = useRef<((state: typeof globalAuthState) => void) | null>(
@@ -438,13 +525,10 @@ export function useAdminAuth() {
     // Set initial state only once
     setAuthState({ ...globalAuthState });
 
-    // NEW: Listen for account status changes
+    // Listen for account status changes
     const handleAccountStatusChange = (event: CustomEvent) => {
       const { status, message } = event.detail;
       console.warn(`🚨 Account status changed to ${status}: ${message}`);
-
-      // You can show a toast notification here
-      // toast.error(message);
     };
 
     window.addEventListener(
@@ -463,13 +547,13 @@ export function useAdminAuth() {
         handleAccountStatusChange as EventListener
       );
     };
-  }, []); // Empty dependency array is safe now
+  }, []);
 
   return {
     user: authState.user,
     loading: authState.loading,
     isAdmin: authState.user?.isAdmin || false,
-    accountStatus: authState.user?.accountStatus, // NEW: Expose account status
+    accountStatus: authState.user?.accountStatus,
     hasRole: useCallback(
       (
         role:
@@ -512,7 +596,7 @@ export function cleanupAuth() {
   initializationPromise = null;
 }
 
-// NEW: Force refresh auth state (useful for testing)
+// Force refresh auth state (useful for testing)
 export async function refreshAuthState(): Promise<void> {
   const auth = await getFirebaseAuth();
   if (auth?.currentUser) {

@@ -153,6 +153,10 @@ export const AUDIT_FILTER_OPTIONS = {
       value: "priority_dashboard_accessed",
       label: "Priority: Dashboard Accessed",
     },
+    // NEW: Authentication actions
+    { value: "admin_signin_web", label: "Web Sign In" },
+    { value: "admin_signout_web", label: "Web Sign Out" },
+    { value: "admin_signin_failed", label: "Web Sign In Failed" },
     // Mobile actions
     { value: "mobile_admin_signin", label: "Mobile Sign In" },
     { value: "mobile_admin_signout", label: "Mobile Sign Out" },
