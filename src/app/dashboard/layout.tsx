@@ -1,5 +1,5 @@
 // src/app/dashboard/layout.tsx
-// UPDATED: Navigation with enhanced audit page (no duplicate)
+// ENHANCED: Navigation with name display and Pasig color scheme
 
 "use client";
 
@@ -16,8 +16,23 @@ import {
   FireIcon,
   ShieldCheckIcon,
   UsersIcon,
-  DocumentTextIcon, // Enhanced audit icon
+  DocumentTextIcon,
+  UserCircleIcon,
 } from "@heroicons/react/24/outline";
+
+/* ---------- Pasig Color Scheme ---------- */
+const PASIG = {
+  primaryNavy: "#08345A",
+  softBlue: "#2BA4FF",
+  slate: "#0F172A",
+  muted: "#6B7280",
+  bg: "#F8FAFC",
+  card: "#FFFFFF",
+  success: "#10B981",
+  warning: "#F59E0B",
+  danger: "#EF4444",
+  subtleBorder: "#E6EEF8",
+};
 
 interface NavigationItem {
   name: string;
@@ -39,7 +54,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
 
-  // Navigation items with enhanced audit page
+  // Navigation items
   const navigation: NavigationItem[] = [
     {
       name: "Dashboard",
@@ -76,7 +91,6 @@ export default function DashboardLayout({
       current: pathname === "/dashboard/map",
       description: "Interactive accessibility map",
     },
-    // Admin Management - Only for super_admin and lgu_admin
     {
       name: "Admins",
       href: "/dashboard/admins",
@@ -85,22 +99,21 @@ export default function DashboardLayout({
       adminOnly: true,
       description: "Manage admin accounts",
     },
-    // ENHANCED: Activity Logs with Mobile Support
     {
       name: "Activity Logs",
       href: "/dashboard/audit",
       icon: DocumentTextIcon,
       current: pathname === "/dashboard/audit",
       auditOnly: true,
-      description: "Track admin activities (web + mobile)",
-      badge: "Enhanced", // Show this is enhanced with mobile support
+      description: "Track admin activities",
+      badge: "Enhanced",
     },
     {
       name: "Settings",
       href: "/dashboard/settings",
       icon: Cog6ToothIcon,
       current: pathname === "/dashboard/settings",
-      description: "System configuration",
+      description: "Profile and system settings",
     },
   ];
 
@@ -119,6 +132,17 @@ export default function DashboardLayout({
     return true;
   });
 
+  // Get display name with fallback
+  const getDisplayName = () => {
+    if (user?.displayName) {
+      return user.displayName;
+    }
+    if (user?.email) {
+      return user.email.split("@")[0];
+    }
+    return "Admin User";
+  };
+
   // Redirect non-admin users
   React.useEffect(() => {
     if (!loading && !user?.isAdmin) {
@@ -128,8 +152,17 @@ export default function DashboardLayout({
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: PASIG.bg }}
+      >
+        <div className="text-center">
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent mx-auto mb-4"
+            style={{ borderColor: PASIG.softBlue }}
+          />
+          <p style={{ color: PASIG.muted }}>Loading dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -139,46 +172,71 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg">
+    <div className="min-h-screen" style={{ backgroundColor: PASIG.bg }}>
+      {/* Enhanced Sidebar */}
+      <div
+        className="fixed inset-y-0 left-0 z-50 w-64 shadow-xl"
+        style={{ backgroundColor: PASIG.card }}
+      >
         <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center h-16 px-4 bg-blue-600">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <ShieldCheckIcon className="h-8 w-8 text-white" />
+          {/* Logo/Header */}
+          <div
+            className="flex items-center h-16 px-4"
+            style={{ backgroundColor: PASIG.primaryNavy }}
+          >
+            <div className="flex items-center space-x-3">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: PASIG.softBlue }}
+              >
+                <MapPinIcon className="h-5 w-5 text-white" />
               </div>
-              <div className="ml-3">
-                <h1 className="text-xl font-bold text-white">WAISPATH</h1>
-                <p className="text-xs text-blue-200">Admin Portal</p>
-              </div>
-            </div>
-          </div>
-
-          {/* User Info */}
-          <div className="px-4 py-4 border-b border-gray-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-medium text-blue-600">
-                    {user.email?.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-gray-700">
-                  {user.email}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {user.customClaims.role?.replace("_", " ").toUpperCase() ||
-                    "ADMIN"}
-                </p>
+              <div>
+                <h1 className="text-white font-bold text-lg">WAISPATH</h1>
+                <p className="text-blue-200 text-xs">Admin Portal</p>
               </div>
             </div>
           </div>
 
-          {/* Navigation */}
+          {/* Enhanced Profile Section */}
+          <div
+            className="p-4 border-b"
+            style={{ borderColor: PASIG.subtleBorder }}
+          >
+            <div className="flex items-center space-x-3">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: PASIG.bg }}
+              >
+                <UserCircleIcon
+                  className="h-6 w-6"
+                  style={{ color: PASIG.softBlue }}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className="text-sm font-medium truncate"
+                  style={{ color: PASIG.slate }}
+                >
+                  {getDisplayName()}
+                </p>
+                <p className="text-xs truncate" style={{ color: PASIG.muted }}>
+                  {user?.email}
+                </p>
+                <p
+                  className="text-xs font-medium px-2 py-1 rounded-full inline-block mt-1"
+                  style={{
+                    backgroundColor: PASIG.bg,
+                    color: PASIG.softBlue,
+                  }}
+                >
+                  {user?.customClaims.role?.replace("_", " ") || "Admin"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Links */}
           <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
             {filteredNavigation.map((item) => {
               const Icon = item.icon;
@@ -186,33 +244,31 @@ export default function DashboardLayout({
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  className={`group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
                     item.current
-                      ? "bg-blue-100 text-blue-600"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      ? "shadow-lg transform scale-105"
+                      : "hover:shadow-md hover:transform hover:scale-102"
                   }`}
-                  title={item.description}
+                  style={{
+                    backgroundColor: item.current
+                      ? PASIG.softBlue
+                      : "transparent",
+                    color: item.current ? "white" : PASIG.slate,
+                  }}
                 >
-                  <Icon
-                    className={`mr-3 flex-shrink-0 h-5 w-5 ${
-                      item.current
-                        ? "text-blue-600"
-                        : "text-gray-400 group-hover:text-gray-500"
-                    }`}
-                  />
+                  <Icon className={`mr-3 h-5 w-5 transition-colors`} />
                   <span className="flex-1">{item.name}</span>
-
-                  {/* Enhanced badge for updated audit page */}
                   {item.badge && (
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                    <span
+                      className="px-2 py-1 text-xs font-medium rounded-full"
+                      style={{
+                        backgroundColor: item.current
+                          ? "rgba(255,255,255,0.2)"
+                          : PASIG.bg,
+                        color: item.current ? "white" : PASIG.softBlue,
+                      }}
+                    >
                       {item.badge}
-                    </span>
-                  )}
-
-                  {/* Admin-only badge */}
-                  {item.adminOnly && (
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                      Admin
                     </span>
                   )}
                 </Link>
@@ -221,25 +277,24 @@ export default function DashboardLayout({
           </nav>
 
           {/* Footer */}
-          <div className="px-4 py-4 border-t border-gray-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">WAISPATH Admin v2.1</span>
-              <button
-                onClick={() => {
-                  // Handle logout
-                  router.push("/");
-                }}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                Sign Out
-              </button>
+          <div
+            className="p-4 border-t"
+            style={{ borderColor: PASIG.subtleBorder }}
+          >
+            <div className="text-center">
+              <p className="text-xs" style={{ color: PASIG.muted }}>
+                WAISPATH Admin Portal
+              </p>
+              <p className="text-xs" style={{ color: PASIG.muted }}>
+                Pasig City Accessibility Management
+              </p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="pl-64">
+      <div className="ml-64">
         <main className="min-h-screen">{children}</main>
       </div>
     </div>

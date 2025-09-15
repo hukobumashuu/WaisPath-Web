@@ -1,5 +1,5 @@
 // src/app/api/audit/logs/route.ts
-// UPDATED: API endpoint for fetching enhanced audit logs with mobile support
+// FIXED: Proper pagination at database level, not client-side slicing
 
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     // Parse query parameters
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = parseInt(searchParams.get("limit") || "25");
     const adminId = searchParams.get("adminId") || undefined;
     const actionParam = searchParams.get("action");
     const targetType = searchParams.get("targetType") || undefined;
@@ -71,7 +71,6 @@ export async function GET(request: NextRequest) {
     // Validate and convert action parameter to proper type
     let action: AuditActionType | MobileAdminActionType | undefined = undefined;
     if (actionParam) {
-      // Define all valid action types (web + mobile)
       const validActions: (AuditActionType | MobileAdminActionType)[] = [
         // Web actions
         "obstacle_verified",
@@ -92,6 +91,15 @@ export async function GET(request: NextRequest) {
         "report_generated",
         "data_exported",
         "bulk_import_performed",
+        "priority_obstacle_verified",
+        "priority_obstacle_rejected",
+        "priority_obstacle_resolved",
+        "priority_dashboard_accessed",
+        "admin_signin_web",
+        "admin_signout_web",
+        "admin_signin_failed",
+        "admin_profile_updated",
+        "admin_password_changed",
         // Mobile actions
         "mobile_admin_signin",
         "mobile_admin_signout",
@@ -101,7 +109,6 @@ export async function GET(request: NextRequest) {
         "mobile_location_access",
       ];
 
-      // Only set action if it's a valid type
       if (
         validActions.includes(
           actionParam as AuditActionType | MobileAdminActionType
@@ -111,10 +118,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calculate offset for pagination
-    const offset = (page - 1) * limit;
-
-    console.log("📋 Fetching enhanced audit logs with filters:", {
+    console.log("📋 Fetching audit logs with proper pagination:", {
       page,
       limit,
       adminId,
@@ -126,27 +130,43 @@ export async function GET(request: NextRequest) {
       requestedBy: decodedToken.email,
     });
 
-    // Get audit logs with filters - now supports mobile actions and source filtering
+    // FIXED: Calculate proper offset for database pagination
+    const offset = (page - 1) * limit;
+
+    // First, get total count for pagination info (without limit)
+    const totalLogs = await auditLogger.getAuditLogs({
+      adminId,
+      action,
+      targetType,
+      source,
+      startDate,
+      endDate,
+      // No limit for count query
+    });
+
+    console.log(`📊 Total logs matching filters: ${totalLogs.length}`);
+
+    // Then get the actual page of logs with proper database-level pagination
     const auditLogs = await auditLogger.getAuditLogs({
       adminId,
       action,
       targetType,
-      source, // NEW: Filter by mobile/web source
+      source,
       startDate,
       endDate,
-      limit: limit + 1, // Get one extra to check if there are more pages
+      limit,
+      offset, // FIXED: Pass offset to database query
     });
 
-    // Handle pagination manually
-    const startIndex = offset;
-    const endIndex = startIndex + limit;
-    const paginatedLogs = auditLogs.slice(startIndex, endIndex);
-    const hasNextPage = auditLogs.length > endIndex;
+    console.log(`📄 Retrieved ${auditLogs.length} logs for page ${page}`);
+
+    // Calculate pagination info based on total count
+    const totalPages = Math.ceil(totalLogs.length / limit);
+    const hasNextPage = page < totalPages;
     const hasPreviousPage = page > 1;
-    const totalPages = Math.ceil(auditLogs.length / limit);
 
     // Format response data with mobile-specific fields
-    const safeAuditData = paginatedLogs.map((log) => ({
+    const safeAuditData = auditLogs.map((log) => ({
       id: log.id,
       adminId: log.adminId,
       adminEmail: log.adminEmail,
@@ -167,9 +187,14 @@ export async function GET(request: NextRequest) {
       },
     }));
 
-    console.log(
-      `📊 Returning ${safeAuditData.length} enhanced audit logs (page ${page})`
-    );
+    // Log source distribution for the current page
+    const pageSourceCount = safeAuditData.reduce((acc, log) => {
+      const source = log.metadata.source || "web_portal";
+      acc[source] = (acc[source] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    console.log(`📊 Page ${page} source distribution:`, pageSourceCount);
 
     return NextResponse.json({
       success: true,
@@ -177,7 +202,7 @@ export async function GET(request: NextRequest) {
       pagination: {
         page,
         limit,
-        total: auditLogs.length,
+        total: totalLogs.length,
         hasNextPage,
         hasPreviousPage,
         totalPages,

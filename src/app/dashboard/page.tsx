@@ -1,9 +1,9 @@
 // src/app/dashboard/page.tsx
-// FIXED: Simple dashboard homepage without complex dependencies
+// ENHANCED: Modern dashboard homepage with Pasig color scheme
 
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useAdminAuth } from "@/lib/auth/firebase-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,8 +13,23 @@ import {
   DocumentChartBarIcon,
   ShieldCheckIcon,
   FireIcon,
-  BellIcon,
+  UsersIcon,
+  UserGroupIcon,
 } from "@heroicons/react/24/outline";
+
+/* ---------- Pasig Color Scheme ---------- */
+const PASIG = {
+  primaryNavy: "#08345A",
+  softBlue: "#2BA4FF",
+  slate: "#0F172A",
+  muted: "#6B7280",
+  bg: "#F8FAFC",
+  card: "#FFFFFF",
+  success: "#10B981",
+  warning: "#F59E0B",
+  danger: "#EF4444",
+  subtleBorder: "#E6EEF8",
+};
 
 interface DashboardCard {
   title: string;
@@ -22,27 +37,68 @@ interface DashboardCard {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   status: string;
-  color: string;
+  gradient: string;
+}
+
+interface StatsData {
+  totalObstacles: number;
+  totalUsers: number;
+  totalAdmins: number;
+  reportsGenerated: number;
 }
 
 export default function AdminDashboard() {
-  const { user, loading, signOut } = useAdminAuth();
+  const { user, loading } = useAdminAuth();
   const router = useRouter();
+  const [stats, setStats] = useState<StatsData>({
+    totalObstacles: 0,
+    totalUsers: 0,
+    totalAdmins: 0,
+    reportsGenerated: 0,
+  });
 
   // Redirect if not authenticated
-  React.useEffect(() => {
+  useEffect(() => {
     if (!loading && !user?.isAdmin) {
       router.push("/auth/login");
     }
   }, [user, loading, router]);
 
+  // Load stats (placeholder for now - you can connect to real data later)
+  useEffect(() => {
+    // Placeholder stats - replace with actual API calls
+    setStats({
+      totalObstacles: 156,
+      totalUsers: 1234,
+      totalAdmins: 8,
+      reportsGenerated: 45,
+    });
+  }, []);
+
+  // Get display name with fallback
+  const getDisplayName = () => {
+    if (user?.displayName) {
+      return user.displayName.split(" ")[0]; // First name only for greeting
+    }
+    if (user?.email) {
+      return user.email.split("@")[0];
+    }
+    return "Admin";
+  };
+
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: PASIG.bg }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent mx-auto mb-4"
+            style={{ borderColor: PASIG.softBlue }}
+          />
+          <p style={{ color: PASIG.muted }}>Loading dashboard...</p>
         </div>
       </div>
     );
@@ -58,198 +114,385 @@ export default function AdminDashboard() {
     {
       title: "Priority Analysis",
       description:
-        "Smart obstacle prioritization with community validation weighting",
+        "Smart obstacle prioritization with AHP-based scoring and community validation",
       href: "/dashboard/priority",
       icon: FireIcon,
-      status: "Ready",
-      color: "border-red-200 bg-red-50",
+      status: "Active",
+      gradient: "from-red-500 to-red-600",
     },
     {
       title: "Admin Reports",
       description:
-        "Generate accessibility compliance reports for local government",
+        "Generate comprehensive accessibility compliance reports for local government",
       href: "/dashboard/reports",
       icon: DocumentChartBarIcon,
       status: "Ready",
-      color: "border-purple-200 bg-purple-50",
-    },
-    {
-      title: "Interactive Map",
-      description: "Visualize and manage accessibility obstacles in real-time",
-      href: "/dashboard/map",
-      icon: MapPinIcon,
-      status: "Ready",
-      color: "border-blue-200 bg-blue-50",
+      gradient: "from-blue-500 to-blue-600",
     },
     {
       title: "Obstacle Management",
-      description: "Review, approve, and manage reported accessibility issues",
+      description:
+        "Review, verify, and manage community-reported accessibility barriers",
       href: "/dashboard/obstacles",
       icon: ShieldCheckIcon,
+      status: "Active",
+      gradient: "from-green-500 to-green-600",
+    },
+    {
+      title: "Interactive Map",
+      description:
+        "Visualize accessibility data and obstacle locations across Pasig City",
+      href: "/dashboard/map",
+      icon: MapPinIcon,
       status: "Ready",
-      color: "border-green-200 bg-green-50",
+      gradient: "from-purple-500 to-purple-600",
+    },
+    {
+      title: "Admin Management",
+      description:
+        "Manage administrator accounts, roles, and permissions system-wide",
+      href: "/dashboard/admins",
+      icon: UserGroupIcon,
+      status: "Ready",
+      gradient: "from-indigo-500 to-indigo-600",
+    },
+    {
+      title: "Activity Logs",
+      description:
+        "Monitor admin activities and system events with detailed audit trails",
+      href: "/dashboard/audit",
+      icon: ChartBarIcon,
+      status: "Enhanced",
+      gradient: "from-orange-500 to-orange-600",
     },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-4">
+    <div className="min-h-screen" style={{ backgroundColor: PASIG.bg }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Welcome Header */}
+        <div className="mb-8">
+          <div className="flex items-center space-x-4 mb-6">
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg"
+              style={{ backgroundColor: PASIG.softBlue }}
+            >
+              <MapPinIcon className="h-8 w-8 text-white" />
+            </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-              <p className="text-sm text-gray-500 flex items-center space-x-2">
-                <span>Intelligent Accessibility Management for Pasig City</span>
-                <span className="text-green-600">• System Online</span>
-                <span className="text-blue-600">• Welcome, {user.email}</span>
+              <h1 className="text-4xl font-bold" style={{ color: PASIG.slate }}>
+                Welcome back, {getDisplayName()}!
+              </h1>
+              <p className="text-lg mt-1" style={{ color: PASIG.muted }}>
+                WAISPATH Admin Portal - Managing accessibility for Pasig City
               </p>
             </div>
-            <div className="flex items-center space-x-4">
-              <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                <BellIcon className="h-5 w-5" />
-                Notifications
-              </button>
-              <button
-                onClick={signOut}
-                className="text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100"
-              >
-                Sign Out
-              </button>
-            </div>
           </div>
-        </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
-            <h2 className="text-xl font-semibold mb-2">
-              Welcome to WAISPATH Admin Dashboard
-            </h2>
-            <p className="text-blue-100">
-              Manage accessibility infrastructure and empower PWDs in Pasig City
-              with intelligent route planning and real-time obstacle reporting.
-            </p>
+          {/* Time-based greeting */}
+          <div
+            className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium"
+            style={{
+              backgroundColor: PASIG.card,
+              color: PASIG.softBlue,
+              border: `1px solid ${PASIG.subtleBorder}`,
+            }}
+          >
+            {new Date().getHours() < 12
+              ? "🌅"
+              : new Date().getHours() < 18
+              ? "☀️"
+              : "🌙"}
+            <span className="ml-2">
+              {new Date().getHours() < 12
+                ? "Good morning"
+                : new Date().getHours() < 18
+                ? "Good afternoon"
+                : "Good evening"}
+            </span>
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Enhanced Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <ShieldCheckIcon className="h-8 w-8 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">
+          {/* Total Obstacles */}
+          <div
+            className="rounded-2xl p-6 shadow-sm border transition-all duration-200 hover:shadow-lg"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: PASIG.muted }}
+                >
                   Total Obstacles
                 </p>
-                <p className="text-2xl font-semibold text-gray-900">--</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <FireIcon className="h-8 w-8 text-red-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">
-                  High Priority
+                <p
+                  className="text-3xl font-bold mt-1"
+                  style={{ color: PASIG.slate }}
+                >
+                  {stats.totalObstacles.toLocaleString()}
                 </p>
-                <p className="text-2xl font-semibold text-gray-900">--</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <MapPinIcon className="h-8 w-8 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">
-                  Active Routes
+                <p className="text-xs mt-1" style={{ color: PASIG.success }}>
+                  Community reports
                 </p>
-                <p className="text-2xl font-semibold text-gray-900">--</p>
+              </div>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${PASIG.success}15` }}
+              >
+                <ShieldCheckIcon
+                  className="h-6 w-6"
+                  style={{ color: PASIG.success }}
+                />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <ChartBarIcon className="h-8 w-8 text-purple-600" />
+          {/* Total Users */}
+          <div
+            className="rounded-2xl p-6 shadow-sm border transition-all duration-200 hover:shadow-lg"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: PASIG.muted }}
+                >
+                  Users
+                </p>
+                <p
+                  className="text-3xl font-bold mt-1"
+                  style={{ color: PASIG.slate }}
+                >
+                  {stats.totalUsers.toLocaleString()}
+                </p>
+                <p className="text-xs mt-1" style={{ color: PASIG.softBlue }}>
+                  Active community
+                </p>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${PASIG.softBlue}15` }}
+              >
+                <UsersIcon
+                  className="h-6 w-6"
+                  style={{ color: PASIG.softBlue }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Total Admins */}
+          <div
+            className="rounded-2xl p-6 shadow-sm border transition-all duration-200 hover:shadow-lg"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: PASIG.muted }}
+                >
+                  Admins
+                </p>
+                <p
+                  className="text-3xl font-bold mt-1"
+                  style={{ color: PASIG.slate }}
+                >
+                  {stats.totalAdmins}
+                </p>
+                <p className="text-xs mt-1" style={{ color: PASIG.warning }}>
+                  System managers
+                </p>
+              </div>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${PASIG.warning}15` }}
+              >
+                <UserGroupIcon
+                  className="h-6 w-6"
+                  style={{ color: PASIG.warning }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Reports Generated */}
+          <div
+            className="rounded-2xl p-6 shadow-sm border transition-all duration-200 hover:shadow-lg"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: PASIG.muted }}
+                >
                   Reports Generated
                 </p>
-                <p className="text-2xl font-semibold text-gray-900">--</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Dashboard Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {dashboardCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <Link key={card.href} href={card.href}>
-                <div
-                  className={`bg-white rounded-lg p-6 shadow-sm border-2 hover:shadow-md transition-shadow cursor-pointer ${card.color}`}
+                <p
+                  className="text-3xl font-bold mt-1"
+                  style={{ color: PASIG.slate }}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center mb-3">
-                        <Icon className="h-6 w-6 text-gray-700 mr-2" />
-                        <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded">
-                          {card.status}
-                        </span>
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                        {card.title}
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        {card.description}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <span className="text-sm font-medium text-blue-600 hover:text-blue-700">
-                      Access Module →
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* Recent Activity */}
-        <div className="mt-8">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">
-                Recent Activity
-              </h3>
-            </div>
-            <div className="p-6">
-              <div className="text-center py-8">
-                <p className="text-gray-500">
-                  System activity will appear here once you start using the
-                  modules.
+                  {stats.reportsGenerated}
+                </p>
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: PASIG.primaryNavy }}
+                >
+                  This month
                 </p>
               </div>
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${PASIG.primaryNavy}15` }}
+              >
+                <ChartBarIcon
+                  className="h-6 w-6"
+                  style={{ color: PASIG.primaryNavy }}
+                />
+              </div>
             </div>
           </div>
         </div>
-      </main>
+
+        {/* Dashboard Cards Grid */}
+        <div>
+          <h2
+            className="text-2xl font-bold mb-6"
+            style={{ color: PASIG.slate }}
+          >
+            Quick Actions
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {dashboardCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <Link key={card.href} href={card.href}>
+                  <div
+                    className="group rounded-2xl p-6 shadow-sm border transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer"
+                    style={{
+                      backgroundColor: PASIG.card,
+                      borderColor: PASIG.subtleBorder,
+                    }}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-r ${card.gradient} shadow-lg`}
+                      >
+                        <Icon className="h-6 w-6 text-white" />
+                      </div>
+                      <span
+                        className="px-3 py-1 text-xs font-medium rounded-full"
+                        style={{
+                          backgroundColor:
+                            card.status === "Enhanced"
+                              ? `${PASIG.softBlue}15`
+                              : `${PASIG.success}15`,
+                          color:
+                            card.status === "Enhanced"
+                              ? PASIG.softBlue
+                              : PASIG.success,
+                        }}
+                      >
+                        {card.status}
+                      </span>
+                    </div>
+
+                    <h3
+                      className="text-lg font-bold mb-2 group-hover:text-blue-600 transition-colors"
+                      style={{ color: PASIG.slate }}
+                    >
+                      {card.title}
+                    </h3>
+
+                    <p
+                      className="text-sm leading-relaxed"
+                      style={{ color: PASIG.muted }}
+                    >
+                      {card.description}
+                    </p>
+
+                    <div
+                      className="mt-4 flex items-center text-sm font-medium group-hover:text-blue-600 transition-colors"
+                      style={{ color: PASIG.softBlue }}
+                    >
+                      <span>Open module</span>
+                      <svg
+                        className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* System Status Footer */}
+        <div className="mt-12">
+          <div
+            className="rounded-2xl p-6 border"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3
+                  className="text-lg font-semibold"
+                  style={{ color: PASIG.slate }}
+                >
+                  System Status
+                </h3>
+                <p className="text-sm" style={{ color: PASIG.muted }}>
+                  All systems operational • Last updated:{" "}
+                  {new Date().toLocaleTimeString()}
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: PASIG.success }}
+                ></div>
+                <span
+                  className="text-sm font-medium"
+                  style={{ color: PASIG.success }}
+                >
+                  Healthy
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // src/lib/services/auditLogger.ts
-// SIMPLE UPDATE: Just add Priority Dashboard actions to existing working code
+// COMPLETE FIX: Ensures both web and mobile logs are visible by default
 
 import { getAdminDb } from "../firebase/admin";
 import type { Firestore } from "firebase-admin/firestore";
@@ -47,11 +47,18 @@ export type AuditActionType =
   | "obstacle_bulk_action"
   | "obstacle_false_report"
 
-  // NEW: Priority Dashboard actions
+  // Priority Dashboard actions
   | "priority_obstacle_verified"
   | "priority_obstacle_rejected"
   | "priority_obstacle_resolved"
   | "priority_dashboard_accessed"
+
+  // Authentication actions
+  | "admin_signin_web"
+  | "admin_signout_web"
+  | "admin_signin_failed"
+  | "admin_profile_updated"
+  | "admin_password_changed"
 
   // User actions
   | "user_suspended"
@@ -93,11 +100,18 @@ const ACTION_DESCRIPTIONS: Record<
   obstacle_bulk_action: "Performed bulk action on obstacles",
   obstacle_false_report: "Flagged obstacle as false report",
 
-  // NEW: Priority Dashboard actions
+  // Priority Dashboard actions
   priority_obstacle_verified: "Verified obstacle via Priority Dashboard",
   priority_obstacle_rejected: "Rejected obstacle via Priority Dashboard",
   priority_obstacle_resolved: "Resolved obstacle via Priority Dashboard",
   priority_dashboard_accessed: "Accessed Priority Analysis Dashboard",
+
+  // Authentication actions
+  admin_signin_web: "Admin signed in to web portal",
+  admin_signout_web: "Admin signed out from web portal",
+  admin_signin_failed: "Failed admin sign-in attempt",
+  admin_profile_updated: "Updated admin profile information",
+  admin_password_changed: "Changed admin password",
 
   // Web user actions
   user_suspended: "Suspended user account",
@@ -136,7 +150,7 @@ export const AUDIT_FILTER_OPTIONS = {
     { value: "obstacle_rejected", label: "Obstacle Rejected" },
     { value: "obstacle_resolved", label: "Obstacle Resolved" },
     { value: "admin_created", label: "Admin Created" },
-    // NEW: Priority Dashboard actions
+    // Priority Dashboard actions
     {
       value: "priority_obstacle_verified",
       label: "Priority: Obstacle Verified",
@@ -153,10 +167,12 @@ export const AUDIT_FILTER_OPTIONS = {
       value: "priority_dashboard_accessed",
       label: "Priority: Dashboard Accessed",
     },
-    // NEW: Authentication actions
+    // Authentication actions
     { value: "admin_signin_web", label: "Web Sign In" },
     { value: "admin_signout_web", label: "Web Sign Out" },
     { value: "admin_signin_failed", label: "Web Sign In Failed" },
+    { value: "admin_profile_updated", label: "Profile Updated" },
+    { value: "admin_password_changed", label: "Password Changed" },
     // Mobile actions
     { value: "mobile_admin_signin", label: "Mobile Sign In" },
     { value: "mobile_admin_signout", label: "Mobile Sign Out" },
@@ -225,45 +241,97 @@ class AuditLogger {
   }
 
   /**
-   * Get audit logs with filtering and pagination (supports mobile filtering)
+   * Get audit logs with filtering and pagination - FIXED to properly handle offset
    */
   async getAuditLogs(options: AuditLogOptions = {}): Promise<AuditLogEntry[]> {
     try {
+      // Start with basic query ordering by timestamp
       let query = this.db.collection("audit_logs").orderBy("timestamp", "desc");
 
-      // Apply filters
+      console.log("🔍 Building audit query with options:", {
+        adminId: options.adminId,
+        action: options.action,
+        targetType: options.targetType,
+        source: options.source,
+        hasDateRange: !!(options.startDate || options.endDate),
+        limit: options.limit,
+        offset: options.offset,
+      });
+
+      // Apply server-side filters
       if (options.adminId) {
         query = query.where("adminId", "==", options.adminId);
-      }
-      if (options.action) {
-        query = query.where("action", "==", options.action);
-      }
-      if (options.targetType) {
-        query = query.where("targetType", "==", options.targetType);
-      }
-      if (options.source) {
-        query = query.where("metadata.source", "==", options.source);
-      }
-      if (options.startDate) {
-        query = query.where("timestamp", ">=", options.startDate);
-      }
-      if (options.endDate) {
-        query = query.where("timestamp", "<=", options.endDate);
-      }
-      if (options.limit) {
-        query = query.limit(options.limit);
+        console.log(`  ➡️ Filtering by adminId: ${options.adminId}`);
       }
 
+      if (options.action) {
+        query = query.where("action", "==", options.action);
+        console.log(`  ➡️ Filtering by action: ${options.action}`);
+      }
+
+      if (options.targetType) {
+        query = query.where("targetType", "==", options.targetType);
+        console.log(`  ➡️ Filtering by targetType: ${options.targetType}`);
+      }
+
+      if (options.startDate) {
+        query = query.where("timestamp", ">=", options.startDate);
+        console.log(
+          `  ➡️ Filtering by startDate: ${options.startDate.toISOString()}`
+        );
+      }
+
+      if (options.endDate) {
+        query = query.where("timestamp", "<=", options.endDate);
+        console.log(
+          `  ➡️ Filtering by endDate: ${options.endDate.toISOString()}`
+        );
+      }
+
+      // Handle source filtering with composite index
+      if (options.source) {
+        console.log(`  ➡️ Filtering by source: ${options.source}`);
+        query = query.where("metadata.source", "==", options.source);
+      }
+
+      // Apply offset for pagination (skip documents)
+      if (options.offset && options.offset > 0) {
+        query = query.offset(options.offset);
+        console.log(`  ➡️ Skipping first ${options.offset} documents`);
+      }
+
+      // Apply limit
+      if (options.limit) {
+        query = query.limit(options.limit);
+        console.log(`  ➡️ Limiting to: ${options.limit} documents`);
+      }
+
+      console.log("🔍 Executing Firestore query...");
       const snapshot = await query.get();
-      const logs = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp.toDate(),
-      })) as AuditLogEntry[];
+
+      const logs = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          timestamp: data.timestamp.toDate(),
+        };
+      }) as AuditLogEntry[];
+
+      console.log(`✅ Retrieved ${logs.length} audit logs`);
+
+      // Log source distribution for debugging
+      const sourceCount = logs.reduce((acc, log) => {
+        const source = log.metadata?.source || "web_portal";
+        acc[source] = (acc[source] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      console.log("📊 Source distribution:", sourceCount);
 
       return logs;
     } catch (error) {
-      console.error("Failed to get audit logs:", error);
+      console.error("❌ Failed to get audit logs:", error);
       throw error;
     }
   }
@@ -345,7 +413,7 @@ class AuditLogger {
         .sort((a, b) => b.actionCount - a.actionCount)
         .slice(0, 5);
 
-      return {
+      const stats = {
         totalActions: logs.length,
         webActions,
         mobileActions,
@@ -357,6 +425,15 @@ class AuditLogger {
         topAdmins,
         recentActions: logs.slice(0, 10),
       };
+
+      console.log("📊 Generated audit stats:", {
+        totalActions: stats.totalActions,
+        webActions: stats.webActions,
+        mobileActions: stats.mobileActions,
+        sourceBreakdown: stats.actionsBySource,
+      });
+
+      return stats;
     } catch (error) {
       console.error("Failed to get audit stats:", error);
       throw error;
@@ -513,6 +590,7 @@ class AuditLogger {
       action,
       targetType: "system",
       targetId: "system",
+      targetDescription: "System operation",
       details,
       metadata,
     });
@@ -522,39 +600,5 @@ class AuditLogger {
 // Export singleton instance
 export const auditLogger = new AuditLogger();
 
-// Helper function to get user-friendly action description
-export function getActionDescription(
-  action: AuditActionType | MobileAdminActionType
-): string {
-  return ACTION_DESCRIPTIONS[action] || action;
-}
-
-// Helper function to get action color for UI (includes mobile + priority actions)
-export function getActionColor(
-  action: AuditActionType | MobileAdminActionType
-): string {
-  // Priority Dashboard actions get special colors
-  if (action.startsWith("priority_")) {
-    return "bg-purple-100 text-purple-800";
-  }
-
-  // Mobile actions get special colors
-  if (action.startsWith("mobile_")) {
-    return "bg-blue-100 text-blue-800";
-  }
-
-  // Web actions (original logic)
-  if (action.startsWith("obstacle_")) {
-    return "bg-blue-100 text-blue-800";
-  }
-  if (action.startsWith("user_")) {
-    return "bg-green-100 text-green-800";
-  }
-  if (action.startsWith("admin_")) {
-    return "bg-red-100 text-red-800";
-  }
-  if (action.startsWith("system_")) {
-    return "bg-purple-100 text-purple-800";
-  }
-  return "bg-gray-100 text-gray-800";
-}
+// Export the class for potential direct instantiation
+export default AuditLogger;
