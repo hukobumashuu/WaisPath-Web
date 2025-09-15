@@ -1,5 +1,5 @@
 // src/lib/services/auditLogger.ts
-// UPDATED: Audit logging service with mobile admin log support - FIXED TypeScript errors
+// SIMPLE UPDATE: Just add Priority Dashboard actions to existing working code
 
 import { getAdminDb } from "../firebase/admin";
 import type { Firestore } from "firebase-admin/firestore";
@@ -9,15 +9,14 @@ export interface AuditLogEntry {
   id?: string;
   adminId: string;
   adminEmail: string;
-  action: AuditActionType | MobileAdminActionType; // ENHANCED: Support mobile actions
+  action: AuditActionType | MobileAdminActionType;
   targetType: "obstacle" | "user" | "admin" | "system";
   targetId: string;
   targetDescription?: string;
   details: string;
   metadata?: {
-    source?: "web_portal" | "mobile_app"; // NEW: Track source
+    source?: "web_portal" | "mobile_app";
     deviceInfo?: {
-      // NEW: Mobile device info
       platform: string;
       appVersion: string;
       deviceModel: string;
@@ -25,22 +24,21 @@ export interface AuditLogEntry {
       osVersion: string;
     };
     location?: {
-      // NEW: GPS location
       latitude: number;
       longitude: number;
     };
-    obstacleId?: string; // NEW: For obstacle reports
+    obstacleId?: string;
     obstacleType?: string;
     obstacleSeverity?: string;
-    mobileAction?: boolean; // NEW: Flag mobile actions
-    [key: string]: unknown; // Allow other metadata
+    mobileAction?: boolean;
+    [key: string]: unknown;
   };
   timestamp: Date;
   ipAddress?: string;
   userAgent?: string;
 }
 
-// ENHANCED: Combined audit action types (web + mobile)
+// ENHANCED: Combined audit action types (web + mobile + priority)
 export type AuditActionType =
   // Obstacle actions
   | "obstacle_verified"
@@ -48,6 +46,12 @@ export type AuditActionType =
   | "obstacle_resolved"
   | "obstacle_bulk_action"
   | "obstacle_false_report"
+
+  // NEW: Priority Dashboard actions
+  | "priority_obstacle_verified"
+  | "priority_obstacle_rejected"
+  | "priority_obstacle_resolved"
+  | "priority_dashboard_accessed"
 
   // User actions
   | "user_suspended"
@@ -68,7 +72,7 @@ export type AuditActionType =
   | "data_exported"
   | "bulk_import_performed";
 
-// NEW: Mobile admin action types
+// Mobile admin action types
 export type MobileAdminActionType =
   | "mobile_admin_signin"
   | "mobile_admin_signout"
@@ -89,6 +93,12 @@ const ACTION_DESCRIPTIONS: Record<
   obstacle_bulk_action: "Performed bulk action on obstacles",
   obstacle_false_report: "Flagged obstacle as false report",
 
+  // NEW: Priority Dashboard actions
+  priority_obstacle_verified: "Verified obstacle via Priority Dashboard",
+  priority_obstacle_rejected: "Rejected obstacle via Priority Dashboard",
+  priority_obstacle_resolved: "Resolved obstacle via Priority Dashboard",
+  priority_dashboard_accessed: "Accessed Priority Analysis Dashboard",
+
   // Web user actions
   user_suspended: "Suspended user account",
   user_unsuspended: "Unsuspended user account",
@@ -108,7 +118,7 @@ const ACTION_DESCRIPTIONS: Record<
   data_exported: "Exported system data",
   bulk_import_performed: "Performed bulk data import",
 
-  // NEW: Mobile admin actions
+  // Mobile admin actions
   mobile_admin_signin: "Admin signed in to mobile app",
   mobile_admin_signout: "Admin signed out from mobile app",
   mobile_obstacle_report: "Reported obstacle via mobile app",
@@ -117,7 +127,7 @@ const ACTION_DESCRIPTIONS: Record<
   mobile_location_access: "Granted location access permission",
 };
 
-// NEW: Filter options for UI (including mobile actions)
+// Filter options for UI (including mobile + priority actions)
 export const AUDIT_FILTER_OPTIONS = {
   actions: [
     { value: "", label: "All Actions" },
@@ -126,6 +136,23 @@ export const AUDIT_FILTER_OPTIONS = {
     { value: "obstacle_rejected", label: "Obstacle Rejected" },
     { value: "obstacle_resolved", label: "Obstacle Resolved" },
     { value: "admin_created", label: "Admin Created" },
+    // NEW: Priority Dashboard actions
+    {
+      value: "priority_obstacle_verified",
+      label: "Priority: Obstacle Verified",
+    },
+    {
+      value: "priority_obstacle_rejected",
+      label: "Priority: Obstacle Rejected",
+    },
+    {
+      value: "priority_obstacle_resolved",
+      label: "Priority: Obstacle Resolved",
+    },
+    {
+      value: "priority_dashboard_accessed",
+      label: "Priority: Dashboard Accessed",
+    },
     // Mobile actions
     { value: "mobile_admin_signin", label: "Mobile Sign In" },
     { value: "mobile_admin_signout", label: "Mobile Sign Out" },
@@ -145,7 +172,6 @@ export const AUDIT_FILTER_OPTIONS = {
   ],
 };
 
-// FIXED: Define the options interface properly
 interface AuditLogOptions {
   adminId?: string;
   action?: AuditActionType | MobileAdminActionType;
@@ -165,7 +191,7 @@ class AuditLogger {
   }
 
   /**
-   * ENHANCED: Log an admin action to the audit trail (supports mobile actions)
+   * Log an admin action to the audit trail (supports mobile actions)
    */
   async logAction(
     entry: Omit<AuditLogEntry, "timestamp" | "id">
@@ -179,7 +205,7 @@ class AuditLogger {
           ACTION_DESCRIPTIONS[entry.action] ||
           "Admin action performed",
         metadata: {
-          source: entry.metadata?.source || "web_portal", // Default to web
+          source: entry.metadata?.source || "web_portal",
           ...entry.metadata,
         },
       };
@@ -195,7 +221,7 @@ class AuditLogger {
   }
 
   /**
-   * ENHANCED: Get audit logs with filtering and pagination (supports mobile filtering)
+   * Get audit logs with filtering and pagination (supports mobile filtering)
    */
   async getAuditLogs(options: AuditLogOptions = {}): Promise<AuditLogEntry[]> {
     try {
@@ -220,71 +246,54 @@ class AuditLogger {
       if (options.endDate) {
         query = query.where("timestamp", "<=", options.endDate);
       }
-
-      // Apply pagination
       if (options.limit) {
         query = query.limit(options.limit);
       }
 
       const snapshot = await query.get();
-      return snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          timestamp: data.timestamp.toDate(),
-        } as AuditLogEntry;
-      });
+      const logs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp.toDate(),
+      })) as AuditLogEntry[];
+
+      return logs;
     } catch (error) {
-      console.error("Failed to fetch audit logs:", error);
+      console.error("Failed to get audit logs:", error);
       throw error;
     }
   }
 
   /**
-   * NEW: Get mobile-specific audit logs
+   * Get audit logs for mobile admins only
    */
   async getMobileAuditLogs(
-    options: Omit<AuditLogOptions, "source"> = {}
+    options: AuditLogOptions = {}
   ): Promise<AuditLogEntry[]> {
-    return this.getAuditLogs({
+    const mobileOptions = {
       ...options,
-      source: "mobile_app",
-    });
+      source: "mobile_app" as const,
+    };
+
+    return this.getAuditLogs(mobileOptions);
   }
 
   /**
-   * NEW: Get web-specific audit logs
-   */
-  async getWebAuditLogs(
-    options: Omit<AuditLogOptions, "source"> = {}
-  ): Promise<AuditLogEntry[]> {
-    return this.getAuditLogs({
-      ...options,
-      source: "web_portal",
-    });
-  }
-
-  /**
-   * ENHANCED: Get audit statistics for dashboard (includes mobile stats)
+   * Get audit statistics (includes mobile stats)
    */
   async getAuditStats(timeframe: "24h" | "7d" | "30d" = "7d"): Promise<{
     totalActions: number;
-    webActions: number; // NEW: Web action count
-    mobileActions: number; // NEW: Mobile action count
+    webActions: number;
+    mobileActions: number;
     actionsByType: Record<string, number>;
-    actionsBySource: {
-      // NEW: Source breakdown
-      web_portal: number;
-      mobile_app: number;
-    };
+    actionsBySource: { web_portal: number; mobile_app: number };
     topAdmins: Array<{ adminEmail: string; actionCount: number }>;
     recentActions: AuditLogEntry[];
   }> {
     try {
+      // Set timeframe
       const now = new Date();
       const startDate = new Date();
-
       switch (timeframe) {
         case "24h":
           startDate.setHours(now.getHours() - 24);
@@ -317,7 +326,7 @@ class AuditLogger {
         adminActionCounts[log.adminEmail] =
           (adminActionCounts[log.adminEmail] || 0) + 1;
 
-        // NEW: Count by source
+        // Count by source
         const source = log.metadata?.source || "web_portal";
         if (source === "mobile_app") {
           mobileActions++;
@@ -334,11 +343,10 @@ class AuditLogger {
 
       return {
         totalActions: logs.length,
-        webActions, // NEW
-        mobileActions, // NEW
+        webActions,
+        mobileActions,
         actionsByType,
         actionsBySource: {
-          // NEW
           web_portal: webActions,
           mobile_app: mobileActions,
         },
@@ -352,7 +360,7 @@ class AuditLogger {
   }
 
   /**
-   * NEW: Get mobile admin activity summary
+   * Get mobile admin activity summary
    */
   async getMobileAdminSummary(
     adminEmail?: string,
@@ -427,7 +435,7 @@ class AuditLogger {
   }
 
   /**
-   * Helper methods for common audit actions (EXISTING - unchanged)
+   * Helper methods for common audit actions
    */
   async logObstacleAction(
     adminId: string,
@@ -510,17 +518,22 @@ class AuditLogger {
 // Export singleton instance
 export const auditLogger = new AuditLogger();
 
-// ENHANCED: Helper function to get user-friendly action description
+// Helper function to get user-friendly action description
 export function getActionDescription(
   action: AuditActionType | MobileAdminActionType
 ): string {
   return ACTION_DESCRIPTIONS[action] || action;
 }
 
-// ENHANCED: Helper function to get action color for UI (includes mobile actions)
+// Helper function to get action color for UI (includes mobile + priority actions)
 export function getActionColor(
   action: AuditActionType | MobileAdminActionType
 ): string {
+  // Priority Dashboard actions get special colors
+  if (action.startsWith("priority_")) {
+    return "bg-purple-100 text-purple-800";
+  }
+
   // Mobile actions get special colors
   if (action.startsWith("mobile_")) {
     return "bg-blue-100 text-blue-800";

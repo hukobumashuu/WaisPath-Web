@@ -1,11 +1,9 @@
 // src/components/admin/PriorityDashboard.tsx
-// ENHANCED: Full lifecycle management with original UI/UX, proper logging, and separated components
-// Status progression: "pending" → "verified" (Under Review) → "resolved" (Fixed)
-//                   ↘️ "false_report" (Rejected/Invalid)
+// FIXED: Priority Dashboard with proper TypeScript types and no barangay assumptions
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { ObstacleStatus } from "@/types/admin";
 import { useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
 import { useAdminAuth } from "@/lib/auth/firebase-auth";
@@ -17,6 +15,27 @@ import { LifecycleManager } from "@/lib/lifecycle/LifecycleManager";
 import PriorityStatsCards, { DashboardStats } from "./PriorityStatsCards";
 import PriorityFilterTabs from "./PriorityFilterTabs";
 import PriorityObstacleCard from "./PriorityObstacleCard";
+import { getAuth } from "firebase/auth";
+
+// Define proper types for audit logging
+interface ObstacleData {
+  id: string;
+  type: string;
+  severity: string;
+  priorityScore: number;
+  priorityCategory: string;
+  location: {
+    latitude: number;
+    longitude: number;
+  };
+  barangay?: string;
+}
+
+interface StatusChange {
+  from: string;
+  to: string;
+  notes: string;
+}
 
 export default function PriorityDashboard() {
   const { user } = useAdminAuth();
@@ -29,6 +48,71 @@ export default function PriorityDashboard() {
     isAdmin: user?.isAdmin,
     timestamp: new Date().toISOString(),
   });
+
+  // Helper function to get auth token
+  const getAuthToken = async (): Promise<string | null> => {
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error("No authenticated user");
+      }
+      const idToken = await currentUser.getIdToken();
+      return idToken;
+    } catch (error) {
+      console.error("Failed to get auth token:", error);
+      return null;
+    }
+  };
+
+  // Helper function to log audit actions via API
+  const logPriorityAuditAction = useCallback(
+    async (
+      action: "dashboard_access" | "status_change",
+      obstacleData?: ObstacleData,
+      statusChange?: StatusChange
+    ) => {
+      try {
+        const authToken = await getAuthToken();
+        if (!authToken) {
+          console.warn("No auth token available for audit logging");
+          return;
+        }
+
+        const response = await fetch("/api/audit/priority", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            action,
+            obstacleData,
+            statusChange,
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log("📝 Audit log created:", result);
+        } else {
+          const error = await response.json();
+          console.warn("Failed to create audit log:", error);
+        }
+      } catch (error) {
+        console.warn("Audit logging failed:", error);
+        // Don't break the app if audit logging fails
+      }
+    },
+    []
+  );
+
+  // NEW: Log dashboard access on mount
+  useEffect(() => {
+    if (user?.uid && user?.email) {
+      logPriorityAuditAction("dashboard_access");
+    }
+  }, [user?.uid, user?.email, logPriorityAuditAction]);
 
   // Firebase hook - using existing infrastructure
   const {
@@ -150,7 +234,7 @@ export default function PriorityDashboard() {
     return filtered;
   }, [prioritizedObstacles, activeFilter]);
 
-  // Handle status changes with comprehensive logging
+  // ENHANCED: Handle status changes with audit logging via API
   const handleStatusChange = async (
     obstacleId: string,
     newStatus: ObstacleStatus,
@@ -188,6 +272,7 @@ export default function PriorityDashboard() {
     try {
       console.log(`📤 Sending status update to Firebase...`);
 
+      // Update Firebase first
       await updateObstacleStatus(
         obstacleId,
         newStatus,
@@ -202,7 +287,38 @@ export default function PriorityDashboard() {
         timestamp: new Date().toISOString(),
       });
 
-      // Log for lifecycle tracking
+      // NEW: Audit logging via API call
+      if (user?.uid && user?.email && currentObstacle) {
+        const obstacleData: ObstacleData = {
+          id: obstacleId,
+          type: currentObstacle.type,
+          severity: currentObstacle.severity,
+          priorityScore: currentObstacle.priorityResult.score,
+          priorityCategory: currentObstacle.priorityResult.category,
+          location: {
+            latitude: currentObstacle.location.latitude,
+            longitude: currentObstacle.location.longitude,
+          },
+          // Only include barangay if it exists
+          ...(currentObstacle.barangay && {
+            barangay: currentObstacle.barangay,
+          }),
+        };
+
+        const statusChange: StatusChange = {
+          from: currentStatus || "unknown",
+          to: newStatus,
+          notes: adminNotes,
+        };
+
+        await logPriorityAuditAction(
+          "status_change",
+          obstacleData,
+          statusChange
+        );
+      }
+
+      // Log for lifecycle tracking (existing)
       if (currentStatus) {
         LifecycleManager.logStatusChange(
           obstacleId,
