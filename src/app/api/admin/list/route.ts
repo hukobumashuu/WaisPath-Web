@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
     const safeAdminData = adminAccounts.map((admin) => ({
       id: admin.id,
       email: admin.email,
+      displayName: admin.displayName || null,
       role: admin.role,
       status: admin.status,
       createdBy: admin.createdBy,

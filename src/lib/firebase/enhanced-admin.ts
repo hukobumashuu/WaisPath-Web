@@ -10,6 +10,7 @@ import type { Firestore } from "firebase-admin/firestore";
 export interface EnhancedAdminAccount {
   id: string;
   email: string;
+  displayName?: string;
   role: "super_admin" | "lgu_admin" | "field_admin";
   status: "active" | "deactivated" | "suspended";
   createdBy: string;
