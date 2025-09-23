@@ -64,24 +64,10 @@ export default function DashboardLayout({
       description: "Overview and key metrics",
     },
     {
-      name: "Analysis",
-      href: "/dashboard/priority",
-      icon: FireIcon,
-      current: pathname === "/dashboard/priority",
-      description: "Priority analysis and scoring",
-    },
-    {
-      name: "Report",
-      href: "/dashboard/reports",
-      icon: DocumentChartBarIcon,
-      current: pathname === "/dashboard/reports",
-      description: "Generate reports and insights",
-    },
-    {
       name: "Obstacle",
-      href: "/dashboard/obstacles",
+      href: "/dashboard/priority",
       icon: ShieldCheckIcon,
-      current: pathname === "/dashboard/obstacles",
+      current: pathname === "/dashboard/priority",
       description: "Manage obstacle reports",
     },
     {
