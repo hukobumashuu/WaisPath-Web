@@ -1,5 +1,5 @@
 // src/components/admin/PriorityObstacleCard.tsx
-// Separated obstacle card component with original styling and lifecycle management
+// Updated component with View Details button for the modal
 
 "use client";
 
@@ -10,17 +10,20 @@ import {
   LifecycleManager,
   StatusAction,
 } from "@/lib/lifecycle/LifecycleManager";
+import { EyeIcon } from "@heroicons/react/24/outline";
 
 interface PriorityObstacleCardProps {
   obstacle: PriorityObstacle;
   rank: number;
   onStatusChange: (id: string, status: ObstacleStatus, notes: string) => void;
+  onViewDetails: (obstacle: PriorityObstacle) => void; // New prop for modal
 }
 
 export default function PriorityObstacleCard({
   obstacle,
   rank,
   onStatusChange,
+  onViewDetails,
 }: PriorityObstacleCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [selectedAction, setSelectedAction] = useState<StatusAction | null>(
@@ -83,6 +86,17 @@ export default function PriorityObstacleCard({
           >
             {badgeConfig?.label}
           </div>
+
+          {/* View Details Button */}
+          <button
+            onClick={() => onViewDetails(obstacle)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors duration-200 text-sm font-medium"
+          >
+            <div className="flex items-center justify-center space-x-2">
+              <EyeIcon className="h-4 w-4" />
+              <span>View Details</span>
+            </div>
+          </button>
         </div>
       );
     }
@@ -108,6 +122,17 @@ export default function PriorityObstacleCard({
             {action.label}
           </button>
         ))}
+
+        {/* View Details Button */}
+        <button
+          onClick={() => onViewDetails(obstacle)}
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors duration-200 text-sm font-medium mt-2"
+        >
+          <div className="flex items-center justify-center space-x-2">
+            <EyeIcon className="h-4 w-4" />
+            <span>View Details</span>
+          </div>
+        </button>
       </div>
     );
   };

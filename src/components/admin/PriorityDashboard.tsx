@@ -1,5 +1,5 @@
 // src/components/admin/PriorityDashboard.tsx
-// FIXED: Priority Dashboard with proper TypeScript types and no barangay assumptions
+// Updated to include the ObstacleDetailModal
 
 "use client";
 
@@ -15,6 +15,7 @@ import { LifecycleManager } from "@/lib/lifecycle/LifecycleManager";
 import PriorityStatsCards, { DashboardStats } from "./PriorityStatsCards";
 import PriorityFilterTabs from "./PriorityFilterTabs";
 import PriorityObstacleCard from "./PriorityObstacleCard";
+import ObstacleDetailModal from "./ObstacleDetailModal";
 import { getAuth } from "firebase/auth";
 
 // Define proper types for audit logging
@@ -41,6 +42,11 @@ export default function PriorityDashboard() {
   const { user } = useAdminAuth();
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [priorityCalculator] = useState(() => new PriorityCalculator());
+
+  // Modal state
+  const [selectedObstacle, setSelectedObstacle] =
+    useState<PriorityObstacle | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   console.log(`🔥 PriorityDashboard initializing with user:`, {
     userId: user?.uid,
@@ -341,6 +347,26 @@ export default function PriorityDashboard() {
     }
   };
 
+  // NEW: Handle viewing obstacle details
+  const handleViewDetails = (obstacle: PriorityObstacle) => {
+    console.log(`👁️ Opening details for obstacle:`, {
+      id: obstacle.id,
+      type: obstacle.type,
+      priority: obstacle.priorityResult.category,
+      score: obstacle.priorityResult.score,
+    });
+
+    setSelectedObstacle(obstacle);
+    setIsModalOpen(true);
+  };
+
+  // NEW: Handle closing modal
+  const handleCloseModal = () => {
+    console.log(`❌ Closing obstacle detail modal`);
+    setIsModalOpen(false);
+    setSelectedObstacle(null);
+  };
+
   // Loading state
   if (loading) {
     console.log(`⏳ Dashboard loading...`);
@@ -349,7 +375,7 @@ export default function PriorityDashboard() {
         <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-6"></div>
           <div className="text-2xl font-bold text-gray-900">
-            Loading Priority Analysis...
+            Loading Obstacle Management...
           </div>
           <div className="text-gray-600 mt-2">
             Processing obstacle data and calculating priorities
@@ -394,7 +420,7 @@ export default function PriorityDashboard() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Priority Analysis Dashboard
+            Obstacle Management
           </h1>
           <p className="text-xl text-gray-600">
             Intelligent obstacle lifecycle management with AHP prioritization
@@ -432,11 +458,22 @@ export default function PriorityDashboard() {
                 obstacle={obstacle}
                 rank={index + 1}
                 onStatusChange={handleStatusChange}
+                onViewDetails={handleViewDetails}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Obstacle Detail Modal */}
+      {selectedObstacle && (
+        <ObstacleDetailModal
+          obstacle={selectedObstacle}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          onStatusChange={handleStatusChange}
+        />
+      )}
     </div>
   );
 }
