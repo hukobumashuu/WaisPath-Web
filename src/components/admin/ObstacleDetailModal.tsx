@@ -1,5 +1,5 @@
 // src/components/admin/ObstacleDetailModal.tsx
-// Simplified single-tab obstacle detail modal
+// Simplified single-tab obstacle detail modal with FIXED soft backdrop
 
 "use client";
 
@@ -106,15 +106,15 @@ export default function ObstacleDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* FIXED: Soft backdrop - gentle gray with blur */}
       <div
-        className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
+        className="absolute inset-0 bg-gray-500 bg-opacity-30 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden border border-gray-200">
         {/* Header */}
         <div
           className="flex items-center justify-between p-6 border-b border-gray-200"
@@ -436,76 +436,6 @@ export default function ObstacleDetailModal({
                 <p className="text-blue-800">
                   {obstacle.priorityResult.timeframe || "Within 30 days"}
                 </p>
-              </div>
-            </div>
-
-            {/* Status History */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <ClockIcon className="h-6 w-6 text-gray-600" />
-                <h4 className="text-lg font-semibold text-gray-900">
-                  Status History
-                </h4>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-start space-x-4">
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <InformationCircleIcon className="h-5 w-5 text-blue-600" />
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-medium text-gray-900">
-                        Report Submitted
-                      </h5>
-                      <span className="text-sm text-gray-500">
-                        {obstacle.reportedAt.toLocaleDateString()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Initial report submitted by community member
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-4">
-                  <div className="flex-shrink-0">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        obstacle.status === "pending"
-                          ? "bg-yellow-100"
-                          : obstacle.status === "verified"
-                          ? "bg-green-100"
-                          : obstacle.status === "resolved"
-                          ? "bg-blue-100"
-                          : "bg-red-100"
-                      }`}
-                    >
-                      {obstacle.status === "pending" ? (
-                        <ClockIcon className="h-5 w-5 text-yellow-600" />
-                      ) : obstacle.status === "verified" ? (
-                        <ShieldCheckIcon className="h-5 w-5 text-green-600" />
-                      ) : obstacle.status === "resolved" ? (
-                        <ShieldCheckIcon className="h-5 w-5 text-blue-600" />
-                      ) : (
-                        <XMarkIcon className="h-5 w-5 text-red-600" />
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-medium text-gray-900 capitalize">
-                        {obstacle.status.replace("_", " ")}
-                      </h5>
-                      <span className="text-sm text-gray-500">Current</span>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Current status of the accessibility report
-                    </p>
-                  </div>
-                </div>
               </div>
             </div>
 

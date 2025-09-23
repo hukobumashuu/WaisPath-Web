@@ -1,5 +1,5 @@
 // src/app/dashboard/admins/page.tsx
-// FRESH: Complete admin management page with proper error handling
+// COMPLETE: Admin management page with integrated creation modal
 
 "use client";
 
@@ -18,6 +18,7 @@ import AdminViewModal from "@/components/admin/AdminViewModal";
 import AdminStatusModal from "@/components/admin/AdminStatusModal";
 import AdminTable from "@/components/admin/AdminTable";
 import AdminFilters from "@/components/admin/AdminFilters";
+import AdminCreationModal from "@/components/admin/AdminCreationModal";
 
 const PASIG = {
   primaryNavy: "#08345A",
@@ -82,6 +83,11 @@ export default function AdminManagementPage() {
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+
+  // Create Admin Modal
+  const [createDialog, setCreateDialog] = useState({
+    isOpen: false,
+  });
 
   // Filters
   const [roleFilter, setRoleFilter] = useState<string>("");
@@ -475,6 +481,16 @@ export default function AdminManagementPage() {
     setStatusDialog((prev) => ({ ...prev, reason }));
   }, []);
 
+  // Create Admin Modal handlers
+  const handleCloseCreateModal = useCallback(() => {
+    setCreateDialog({ isOpen: false });
+  }, []);
+
+  const handleAdminCreated = useCallback(() => {
+    // Refresh admin list after creation
+    loadAdminAccounts();
+  }, [loadAdminAccounts]);
+
   // Check permissions
   const canManageAdmins = hasPermission("admins:manage");
   const canCreateAdmins = hasPermission("admins:create");
@@ -549,6 +565,12 @@ export default function AdminManagementPage() {
           onReasonChange={handleReasonChange}
         />
 
+        <AdminCreationModal
+          isOpen={createDialog.isOpen}
+          onClose={handleCloseCreateModal}
+          onAdminCreated={handleAdminCreated}
+        />
+
         {/* Header */}
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
@@ -566,7 +588,7 @@ export default function AdminManagementPage() {
 
             {canCreateAdmins && (
               <button
-                onClick={() => router.push("/dashboard/admins/create")}
+                onClick={() => setCreateDialog({ isOpen: true })}
                 className="flex items-center px-4 py-2 text-white rounded-xl transition-colors hover:opacity-90"
                 style={{ backgroundColor: PASIG.softBlue }}
               >
