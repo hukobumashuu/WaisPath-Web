@@ -12,8 +12,6 @@ import {
   HomeIcon,
   MapPinIcon,
   Cog6ToothIcon,
-  DocumentChartBarIcon,
-  FireIcon,
   ShieldCheckIcon,
   UsersIcon,
   DocumentTextIcon,

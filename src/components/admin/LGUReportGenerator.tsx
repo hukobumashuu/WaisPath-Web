@@ -1,13 +1,15 @@
 // src/components/admin/LGUReportGenerator.tsx
-// UPDATED: Now uses REAL Firebase data for government reports!
+// FIXED: Removed unused imports and variables
 
 "use client";
 
 import { useState, useCallback } from "react";
-import { AdminObstacle, ObstacleStatus } from "@/types/admin";
-import { useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
+import { AdminObstacle } from "@/types/admin";
 
-// ✅ STEP 3A: LGU Report interfaces
+// Remove unused imports:
+// import { ObstacleStatus, useFirebaseObstacles } from "@/lib/hooks/useFirebaseObstacles";
+
+// ✅ STEP 3A: LGU Report interfaces (unchanged)
 interface PriorityResult {
   score: number;
   category: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
@@ -60,7 +62,7 @@ interface LGUReport {
   recommendations: string[];
 }
 
-// ✅ STEP 3B: Use same calculator (consistency!)
+// ✅ Priority calculator class (unchanged)
 class ReportPriorityCalculator {
   calculatePriority(obstacle: AdminObstacle): PriorityResult {
     const severityPoints = this.getSeverityPoints(obstacle.severity);
@@ -197,7 +199,7 @@ class ReportPriorityCalculator {
   }
 }
 
-// ✅ STEP 3C: Report Preview Component
+// ✅ Report Preview Component (unchanged)
 function ReportPreview({ report }: { report: LGUReport }) {
   return (
     <div className="bg-white border rounded-lg p-6 max-h-96 overflow-y-auto">
@@ -317,7 +319,7 @@ function ReportPreview({ report }: { report: LGUReport }) {
   );
 }
 
-// ✅ STEP 3D: Main LGU Report Generator Component
+// ✅ Main LGU Report Generator Component
 export default function LGUReportGenerator() {
   const [report, setReport] = useState<LGUReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -325,66 +327,48 @@ export default function LGUReportGenerator() {
 
   const [calculator] = useState(() => new ReportPriorityCalculator());
 
-  // ✅ STEP 3E: Generate report with REAL Firebase data
+  // 🔧 FIXED: Simplified generate report function - removed unused Firebase hook import
   const generateReport = useCallback(async () => {
     setLoading(true);
-    console.log(
-      `📊 Generating LGU report for last ${timeframe} days with REAL data...`
-    );
+    console.log(`📊 Generating LGU report for last ${timeframe} days...`);
 
     try {
-      // 🔥 NEW: Load real Firebase data for the specified timeframe
-      const { obstacles: realObstacles } = await new Promise<{
-        obstacles: AdminObstacle[];
-      }>((resolve) => {
-        // Use the Firebase hook to get real data
-        import("@/lib/hooks/useFirebaseObstacles").then(
-          ({ useFirebaseObstacles }) => {
-            // We'll get real obstacles for the timeframe
-            resolve({ obstacles: [] }); // Temporary - will be replaced below
-          }
-        );
-      });
-
-      // For now, we'll load all obstacles and filter by timeframe
-      // In a real implementation, you'd modify the hook to accept timeframe parameter
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - parseInt(timeframe));
-
-      // Filter obstacles by timeframe (reported within the specified days)
-      const timeframeObstacles = realObstacles.filter(
-        (obstacle) => obstacle.reportedAt >= cutoffDate
-      );
-
-      console.log(
-        `📅 Found ${timeframeObstacles.length} obstacles in last ${timeframe} days`
-      );
-
-      // Use real data if available, fallback to sample for demo
-      const obstaclesForReport =
-        timeframeObstacles.length > 0
-          ? timeframeObstacles
-          : ([
-              // Sample data as fallback for demo purposes
-              {
-                id: "demo_1",
-                location: { latitude: 14.5764, longitude: 121.0851 },
-                type: "stairs_no_ramp",
-                severity: "blocking",
-                description:
-                  "City Hall main entrance has stairs but no wheelchair ramp",
-                reportedBy: "user_wheelchair_001",
-                reportedAt: new Date(Date.now() - 86400000),
-                upvotes: 15,
-                downvotes: 1,
-                status: "verified",
-                verified: true,
-                createdAt: new Date(Date.now() - 86400000),
-              },
-            ] as AdminObstacle[]);
+      // For now, use sample data for demo purposes
+      // In production, you would fetch real Firebase data here
+      const sampleObstacles: AdminObstacle[] = [
+        {
+          id: "demo_1",
+          location: { latitude: 14.5764, longitude: 121.0851 },
+          type: "stairs_no_ramp",
+          severity: "blocking",
+          description:
+            "City Hall main entrance has stairs but no wheelchair ramp",
+          reportedBy: "user_wheelchair_001",
+          reportedAt: new Date(Date.now() - 86400000),
+          upvotes: 15,
+          downvotes: 1,
+          status: "verified",
+          verified: true,
+          createdAt: new Date(Date.now() - 86400000),
+        },
+        {
+          id: "demo_2",
+          location: { latitude: 14.575, longitude: 121.084 },
+          type: "vendor_blocking",
+          severity: "high",
+          description: "Street vendors blocking sidewalk near market",
+          reportedBy: "user_walker_002",
+          reportedAt: new Date(Date.now() - 172800000),
+          upvotes: 8,
+          downvotes: 2,
+          status: "pending",
+          verified: false,
+          createdAt: new Date(Date.now() - 172800000),
+        },
+      ];
 
       // Calculate priorities
-      const prioritizedObstacles: PriorityObstacle[] = obstaclesForReport.map(
+      const prioritizedObstacles: PriorityObstacle[] = sampleObstacles.map(
         (obstacle) => ({
           ...obstacle,
           priorityResult: calculator.calculatePriority(obstacle),
@@ -493,17 +477,14 @@ export default function LGUReportGenerator() {
       setReport(generatedReport);
       setLoading(false);
 
-      console.log(
-        "✅ LGU Report generated successfully with real Firebase data:",
-        generatedReport
-      );
+      console.log("✅ LGU Report generated successfully:", generatedReport);
     } catch (error) {
       console.error("❌ Error generating report:", error);
       setLoading(false);
     }
   }, [timeframe, calculator]);
 
-  // ✅ STEP 3F: Download as text report (placeholder for PDF)
+  // Download report function (unchanged)
   const downloadReport = useCallback(() => {
     if (!report) return;
 
@@ -586,7 +567,7 @@ Priority Algorithm: Severity (40%) + Community (30%) + Infrastructure (20%) + Ad
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          📊 Admin Report Generator
+          📊 LGU Report Generator
         </h1>
         <p className="text-gray-600">
           Generate evidence-based accessibility improvement reports for local

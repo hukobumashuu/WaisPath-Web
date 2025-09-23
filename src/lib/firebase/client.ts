@@ -34,7 +34,7 @@ function getFirebaseConfig(): FirebaseConfig {
 
   // Validate that all required config is present
   const missingKeys = Object.entries(config)
-    .filter(([key, value]) => !value)
+    .filter(([value]) => !value)
     .map(([key]) => key);
 
   if (missingKeys.length > 0) {

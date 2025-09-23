@@ -1,5 +1,6 @@
 // src/app/api/admin/update/[id]/route.ts
 // API endpoint for updating admin information with audit logging
+// Fixed for Next.js 15 async params
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
@@ -7,9 +8,12 @@ import { auditLogger } from "@/lib/services/auditLogger";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> } // 🔧 FIX: params is now Promise<{ id: string }>
 ) {
   try {
+    // 🔧 FIX: Await the params Promise
+    const { id: adminId } = await params;
+
     // Get authorization header
     const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -51,7 +55,7 @@ export async function PATCH(
     // Parse request body
     const body = await request.json();
     const { displayName, role, metadata } = body;
-    const adminId = params.id;
+    // 🔧 FIX: adminId is now from awaited params above
 
     console.log("📝 Admin update request:", {
       adminId,
@@ -311,15 +315,28 @@ export async function PATCH(
   }
 }
 
-// Handle other HTTP methods
-export async function GET() {
+// Handle other HTTP methods - these also need the async params fix
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  // We don't need the id for method not allowed responses
+  await params; // Just await to satisfy Next.js 15 requirements
   return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }
 
-export async function POST() {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  await params;
   return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }
 
-export async function DELETE() {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  await params;
   return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }

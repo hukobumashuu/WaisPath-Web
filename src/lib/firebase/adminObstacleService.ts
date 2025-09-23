@@ -11,6 +11,7 @@ import {
   Timestamp,
   DocumentSnapshot,
   DocumentData,
+  UpdateData,
 } from "firebase/firestore";
 import { db } from "./config";
 import { AdminObstacle, ObstacleStatus } from "@/types/admin";
@@ -261,7 +262,7 @@ export class AdminObstacleService {
 
       const obstacleRef = doc(db, this.COLLECTION_NAME, obstacleId);
 
-      const updateData: Record<string, unknown> = {
+      const updateData: UpdateData<DocumentData> = {
         status,
         verified: status === "verified",
         reviewedBy: adminUserId,

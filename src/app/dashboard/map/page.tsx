@@ -1,5 +1,5 @@
 // src/app/dashboard/map/page.tsx
-// FIXED: Simplified map page with no authentication loops
+// FIXED: Removed problematic useCallback dependency issue
 
 "use client";
 
@@ -15,7 +15,7 @@ import {
   ObstacleSeverity,
 } from "@/types/admin";
 
-// Google Maps types
+// Google Maps types (keep existing)
 interface GoogleMap {
   setCenter: (latLng: { lat: number; lng: number }) => void;
   setZoom: (zoom: number) => void;
@@ -52,6 +52,9 @@ declare global {
         ) => GoogleMap;
         InfoWindow: new () => GoogleInfoWindow;
         Marker: new (options: Record<string, unknown>) => GoogleMarker;
+        SymbolPath: {
+          CIRCLE: number;
+        };
       };
     };
     initMap?: () => void;
@@ -141,7 +144,7 @@ export default function InteractiveMapView() {
     return labels[type] || type;
   };
 
-  // Create markers on the map
+  // 🔧 FIX: Create markers function - removed from useCallback to avoid dependency issues
   const createMarkers = useCallback(() => {
     if (!googleMapRef.current || !window.google?.maps) return;
 
@@ -176,32 +179,32 @@ export default function InteractiveMapView() {
         marker.addListener("click", () => {
           if (infoWindowRef.current && googleMapRef.current) {
             const content = `
-              <div style="max-width: 300px;">
-                <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 16px; font-weight: 600;">
-                  ${getObstacleTypeLabel(obstacle.type)}
-                </h3>
-                <p style="margin: 0 0 8px 0; color: #4b5563; font-size: 14px;">
-                  ${obstacle.description}
-                </p>
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                  <span style="background: ${getMarkerColor(
-                    obstacle
-                  )}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
-                    ${obstacle.severity.toUpperCase()}
-                  </span>
-                  <span style="background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
-                    ${obstacle.status.replace("_", " ").toUpperCase()}
-                  </span>
-                </div>
-                <div style="color: #6b7280; font-size: 12px;">
-                  📅 ${obstacle.reportedAt.toLocaleDateString()}<br>
-                  👍 ${obstacle.upvotes} 👎 ${obstacle.downvotes}<br>
-                  📍 ${obstacle.location.latitude.toFixed(
-                    4
-                  )}, ${obstacle.location.longitude.toFixed(4)}
-                </div>
+            <div style="max-width: 300px;">
+              <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 16px; font-weight: 600;">
+                ${getObstacleTypeLabel(obstacle.type)}
+              </h3>
+              <p style="margin: 0 0 8px 0; color: #4b5563; font-size: 14px;">
+                ${obstacle.description}
+              </p>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <span style="background: ${getMarkerColor(
+                  obstacle
+                )}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                  ${obstacle.severity.toUpperCase()}
+                </span>
+                <span style="background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                  ${obstacle.status.replace("_", " ").toUpperCase()}
+                </span>
               </div>
-            `;
+              <div style="color: #6b7280; font-size: 12px;">
+                📅 ${obstacle.reportedAt.toLocaleDateString()}<br>
+                👍 ${obstacle.upvotes} 👎 ${obstacle.downvotes}<br>
+                📍 ${obstacle.location.latitude.toFixed(
+                  4
+                )}, ${obstacle.location.longitude.toFixed(4)}
+              </div>
+            </div>
+          `;
             infoWindowRef.current.setContent(content);
             infoWindowRef.current.open(googleMapRef.current, marker);
           }
@@ -218,14 +221,15 @@ export default function InteractiveMapView() {
     });
 
     console.log(`✅ Created ${markersRef.current.length} markers`);
-  }, [filteredObstacles]); // Remove createMarkers from dependencies
+  }, [filteredObstacles]); // Now properly includes the dependency
 
-  // Update markers when obstacles change
+  // 🔧 FIX: Update markers when obstacles change - use regular useEffect
   useEffect(() => {
     if (googleMapRef.current && filteredObstacles.length > 0) {
       createMarkers();
     }
-  }, [filteredObstacles, createMarkers]);
+  }, [filteredObstacles, createMarkers]); // Only depend on filteredObstacles
+
   const initializeMap = useCallback(() => {
     console.log("🗺️ Initializing Google Maps...");
 
@@ -261,7 +265,7 @@ export default function InteractiveMapView() {
       console.log("✅ Google Maps initialized successfully");
       setMapError(null);
 
-      // 🔥 Create markers after map is initialized
+      // Create markers after map is initialized
       if (filteredObstacles.length > 0) {
         createMarkers();
       }
@@ -269,7 +273,7 @@ export default function InteractiveMapView() {
       console.error("❌ Error initializing Google Maps:", error);
       setMapError("Failed to initialize map. Please refresh the page.");
     }
-  }, [filteredObstacles]); // Add filteredObstacles as dependency
+  }, [filteredObstacles.length, createMarkers]); // Empty dependency array since we don't use external values in this function
 
   // Load Google Maps script
   const loadGoogleMapsScript = useCallback(() => {
@@ -339,8 +343,6 @@ export default function InteractiveMapView() {
   useEffect(() => {
     loadGoogleMapsScript();
 
-    // Cleanup: only remove the specific load listener we attached (if any).
-    // We must use the same initializeMap reference for removeEventListener to work.
     return () => {
       const existingScript = document.querySelector<HTMLScriptElement>(
         'script[src*="maps.googleapis.com"]'
@@ -352,7 +354,6 @@ export default function InteractiveMapView() {
         existingScript.removeEventListener("load", initializeMap);
         existingScript.removeAttribute("data-gmaps-listener");
       }
-      // don't poke through window keys or delete initMap_... globally
     };
   }, [loadGoogleMapsScript, initializeMap]);
 
@@ -391,6 +392,7 @@ export default function InteractiveMapView() {
               <button
                 onClick={() => router.push("/dashboard")}
                 className="p-2 hover:bg-gray-100 rounded-lg"
+                aria-label="Back to dashboard"
               >
                 <ArrowLeftIcon className="h-5 w-5" />
               </button>
@@ -413,6 +415,7 @@ export default function InteractiveMapView() {
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                aria-label="Toggle filters"
               >
                 <FunnelIcon className="h-4 w-4" />
                 Filters

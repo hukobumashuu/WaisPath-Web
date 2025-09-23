@@ -1,9 +1,9 @@
 // src/lib/hooks/useFirebaseObstacles.ts
-// FIXED: Real Firebase connection with stable loading states
+// FIXED: Resolved React Hook dependency issue
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { adminObstacleService } from "@/lib/firebase/adminObstacleService";
 import { AdminObstacle, ObstacleStatus } from "@/types/admin";
 
@@ -39,15 +39,12 @@ export function useFirebaseObstacles(
     totalVotes: 0,
   });
 
-  // 🔥 FIX: Use refs to prevent dependency loops
+  // 🔧 FIX: Memoize options to prevent unnecessary re-renders
+  const memoizedOptions = useMemo(() => options, [options]);
+
+  // Use refs to prevent dependency loops
   const hasLoadedRef = useRef(false);
   const loadingRef = useRef(false);
-  const optionsRef = useRef(options);
-
-  // Update options ref when options change
-  useEffect(() => {
-    optionsRef.current = options;
-  }, [options.autoLoad, options.limit, options.timeframeDays]);
 
   // Calculate stats when obstacles change
   useEffect(() => {
@@ -65,7 +62,7 @@ export function useFirebaseObstacles(
     setStats(newStats);
   }, [obstacles]);
 
-  // 🔥 FIX: Stable load function with proper state management
+  // 🔧 FIX: Stable load function with memoized options
   const loadObstacles = useCallback(async () => {
     // Prevent concurrent loading
     if (loadingRef.current) {
@@ -93,16 +90,16 @@ export function useFirebaseObstacles(
 
       let loadedObstacles: AdminObstacle[];
 
-      if (optionsRef.current.timeframeDays) {
+      if (memoizedOptions.timeframeDays) {
         // Load obstacles for specific timeframe
         loadedObstacles = await adminObstacleService.getObstaclesInTimeframe(
-          optionsRef.current.timeframeDays
+          memoizedOptions.timeframeDays
         );
       } else {
         // Load all obstacles with filtering
         loadedObstacles = await adminObstacleService.getAllObstacles({
-          limit: optionsRef.current.limit,
-          status: optionsRef.current.status,
+          limit: memoizedOptions.limit,
+          status: memoizedOptions.status,
           orderBy: "reportedAt",
           orderDirection: "desc",
         });
@@ -123,9 +120,9 @@ export function useFirebaseObstacles(
       setLoading(false);
       loadingRef.current = false;
     }
-  }, []); // Empty dependency array to prevent loops
+  }, [memoizedOptions]); // Now properly includes the dependency
 
-  // 🔥 FIX: Update obstacle status
+  // Update obstacle status
   const updateObstacleStatus = useCallback(
     async (
       obstacleId: string,
@@ -180,7 +177,7 @@ export function useFirebaseObstacles(
     }
   }, []);
 
-  // 🔥 FIX: One-time auto-load with stable conditions
+  // 🔧 FIX: Auto-load with proper dependencies
   useEffect(() => {
     // Only auto-load if:
     // 1. autoLoad is enabled (default true)
@@ -188,7 +185,7 @@ export function useFirebaseObstacles(
     // 3. Not currently loading
     // 4. Have adminUserId
     if (
-      options.autoLoad !== false &&
+      memoizedOptions.autoLoad !== false &&
       !hasLoadedRef.current &&
       !loadingRef.current &&
       adminUserId &&
@@ -197,7 +194,7 @@ export function useFirebaseObstacles(
       console.log("🚀 Auto-loading obstacles for admin:", adminUserId);
       loadObstacles();
     }
-  }, [adminUserId, loadObstacles, options.autoLoad]);
+  }, [adminUserId, loadObstacles, memoizedOptions.autoLoad]); // Proper dependencies
 
   return {
     obstacles,

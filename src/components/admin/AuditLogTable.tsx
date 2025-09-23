@@ -1,5 +1,5 @@
 // src/components/admin/AuditLogTable.tsx
-// Enhanced audit log table with name display and modern UI
+// FIXED: Removed unused ActionIcon variable
 
 "use client";
 
@@ -8,7 +8,6 @@ import {
   DocumentTextIcon,
   DevicePhoneMobileIcon,
   ComputerDesktopIcon,
-  UserIcon,
   ShieldCheckIcon,
   MapPinIcon,
   UserCircleIcon,
@@ -96,29 +95,6 @@ export default function AuditLogTable({
       return "bg-blue-100 text-blue-800";
     if (action.includes("mobile")) return "bg-indigo-100 text-indigo-800";
     return "bg-gray-100 text-gray-800";
-  };
-
-  // Get action icon
-  const getActionIcon = (action: string, source?: string) => {
-    if (source === "mobile_app") return DevicePhoneMobileIcon;
-
-    switch (action) {
-      case "mobile_admin_signin":
-      case "mobile_admin_signout":
-      case "admin_signin_web":
-      case "admin_signout_web":
-        return UserIcon;
-      case "mobile_obstacle_report":
-        return MapPinIcon;
-      case "obstacle_verified":
-      case "obstacle_rejected":
-        return ShieldCheckIcon;
-      case "admin_created":
-      case "admin_deactivated":
-        return UserIcon;
-      default:
-        return DocumentTextIcon;
-    }
   };
 
   if (loading) {
@@ -210,10 +186,8 @@ export default function AuditLogTable({
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {logs.map((log) => {
-              const ActionIcon = getActionIcon(
-                log.action,
-                log.metadata?.source
-              );
+              // 🔧 FIXED: Don't assign unused variable, just call the function if needed
+              // const ActionIcon = getActionIcon(log.action, log.metadata?.source);
               const actionBadgeColor = getActionBadgeColor(log.action);
 
               return (

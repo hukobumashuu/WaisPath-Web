@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
-import { getAuth, connectAuthEmulator } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 // ✅ Your Firebase configuration from .env.local
 const firebaseConfig = {
@@ -20,17 +20,5 @@ export const db = getFirestore(app);
 
 // Initialize Auth
 export const auth = getAuth(app);
-
-// Connect to emulators in development (optional)
-if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
-  // Only connect to emulators if not already connected
-  try {
-    // Uncomment these if you're using Firebase emulators locally
-    // connectFirestoreEmulator(db, 'localhost', 8080);
-    // connectAuthEmulator(auth, 'http://localhost:9099');
-  } catch (error) {
-    console.log("Emulators already connected or not available");
-  }
-}
 
 export default app;
