@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useAdminAuth } from "@/lib/auth/firebase-auth";
-import { useRouter } from "next/navigation";
 import {
   UserPlusIcon,
   ExclamationTriangleIcon,
@@ -77,7 +76,6 @@ interface ApiAdminResponse {
 
 export default function AdminManagementPage() {
   const { user, loading, hasPermission } = useAdminAuth();
-  const router = useRouter();
 
   // Initialize with empty array to prevent undefined errors
   const [admins, setAdmins] = useState<AdminAccount[]>([]);

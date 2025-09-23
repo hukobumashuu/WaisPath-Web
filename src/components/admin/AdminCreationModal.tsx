@@ -1,5 +1,5 @@
 // src/components/admin/AdminCreationModal.tsx
-// Admin creation modal with no dark backdrop
+// Simplified admin creation modal - like basic registration
 
 "use client";
 
@@ -11,6 +11,10 @@ import {
   ClipboardDocumentIcon,
   EyeIcon,
   EyeSlashIcon,
+  UserIcon,
+  EnvelopeIcon,
+  ShieldCheckIcon,
+  KeyIcon,
 } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import { getAuth } from "firebase/auth";
@@ -31,16 +35,14 @@ const PASIG = {
 interface AdminCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdminCreated: () => void; // Callback to refresh admin list
+  onAdminCreated: () => void;
 }
 
 interface CreateAdminForm {
   email: string;
   role: "lgu_admin" | "field_admin";
   displayName: string;
-  phoneNumber: string;
-  department: string;
-  notes: string;
+  password: string;
 }
 
 interface CreatedAdminResult {
@@ -52,7 +54,7 @@ interface CreatedAdminResult {
     createdAt: string;
     permissions: string[];
   };
-  temporaryPassword: string;
+  temporaryPassword?: string;
   message: string;
 }
 
@@ -65,9 +67,7 @@ export default function AdminCreationModal({
     email: "",
     role: "field_admin",
     displayName: "",
-    phoneNumber: "",
-    department: "",
-    notes: "",
+    password: "",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,24 +77,7 @@ export default function AdminCreationModal({
   const [showPassword, setShowPassword] = useState(false);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
-  // Reset form when modal opens/closes
-  useEffect(() => {
-    if (isOpen) {
-      setForm({
-        email: "",
-        role: "field_admin",
-        displayName: "",
-        phoneNumber: "",
-        department: "",
-        notes: "",
-      });
-      setCreatedAdmin(null);
-      setShowPassword(false);
-      setPasswordCopied(false);
-    }
-  }, [isOpen]);
-
-  // Handle escape key
+  // Handle escape key and backdrop clicks
   useEffect(() => {
     if (!isOpen) return;
 
@@ -103,8 +86,28 @@ export default function AdminCreationModal({
     };
 
     document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = "unset";
+    };
   }, [isOpen, onClose]);
+
+  // Reset form when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setForm({
+        email: "",
+        role: "field_admin",
+        displayName: "",
+        password: "",
+      });
+      setCreatedAdmin(null);
+      setShowPassword(false);
+      setPasswordCopied(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -128,7 +131,11 @@ export default function AdminCreationModal({
 
   // Validate form
   const isFormValid = () => {
-    return form.email.trim() && form.email.includes("@") && form.role;
+    const hasEmail = form.email.trim() && form.email.includes("@");
+    const hasRole = !!form.role;
+    const hasPassword = form.password.length >= 8;
+
+    return hasEmail && hasRole && hasPassword;
   };
 
   // Handle form submission
@@ -154,11 +161,10 @@ export default function AdminCreationModal({
         body: JSON.stringify({
           email: form.email.toLowerCase().trim(),
           role: form.role,
+          sendInvite: false,
           metadata: {
             displayName: form.displayName.trim() || undefined,
-            phoneNumber: form.phoneNumber.trim() || undefined,
-            department: form.department.trim() || undefined,
-            notes: form.notes.trim() || undefined,
+            customPassword: form.password,
           },
         }),
       });
@@ -166,9 +172,12 @@ export default function AdminCreationModal({
       const result = await response.json();
 
       if (response.ok && result.success) {
-        setCreatedAdmin(result.data);
+        setCreatedAdmin({
+          ...result.data,
+          temporaryPassword: form.password,
+        });
         toast.success("Admin account created successfully!");
-        onAdminCreated(); // Refresh the admin list
+        onAdminCreated();
       } else {
         toast.error(result.error || "Failed to create admin account");
       }
@@ -188,8 +197,6 @@ export default function AdminCreationModal({
       await navigator.clipboard.writeText(createdAdmin.temporaryPassword);
       setPasswordCopied(true);
       toast.success("Password copied to clipboard!");
-
-      // Reset copied state after 3 seconds
       setTimeout(() => setPasswordCopied(false), 3000);
     } catch (error) {
       console.error("Failed to copy password:", error);
@@ -203,94 +210,117 @@ export default function AdminCreationModal({
     onClose();
   };
 
+  // Get role info
+  const getRoleInfo = (role: string) => {
+    const roleMap = {
+      lgu_admin: {
+        name: "LGU Administrator",
+        color: "bg-blue-100 text-blue-800 border-blue-300",
+      },
+      field_admin: {
+        name: "Field Administrator",
+        color: "bg-green-100 text-green-800 border-green-300",
+      },
+    };
+    return roleMap[role as keyof typeof roleMap] || roleMap.field_admin;
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Transparent backdrop - no dark overlay */}
-      <div className="absolute inset-0 bg-transparent" onClick={onClose} />
+      {/* Backdrop with blur */}
+      <div
+        className="absolute inset-0 backdrop-blur-sm"
+        onClick={createdAdmin ? undefined : onClose}
+      />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-200">
+      <div className="relative bg-white rounded-2xl shadow-2xl drop-shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-hidden border-2 border-gray-300/50 ring-1 ring-black/5">
         {/* Header */}
         <div
-          className="flex items-center justify-between p-6 border-b"
-          style={{
-            backgroundColor: PASIG.bg,
-            borderColor: PASIG.subtleBorder,
-          }}
+          className="flex items-center justify-between p-6 border-b border-gray-200"
+          style={{ backgroundColor: PASIG.primaryNavy }}
         >
           <div className="flex items-center space-x-3">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: PASIG.softBlue }}
+              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg bg-white"
+              style={{ color: PASIG.primaryNavy }}
             >
-              <UserPlusIcon className="h-6 w-6 text-white" />
+              {createdAdmin ? "✅" : <UserPlusIcon className="h-6 w-6" />}
             </div>
             <div>
-              <h2 className="text-xl font-bold" style={{ color: PASIG.slate }}>
-                {createdAdmin
-                  ? "Admin Created Successfully"
-                  : "Create New Admin"}
+              <h2 className="text-xl font-bold text-white">
+                {createdAdmin ? "Admin Created" : "Create Administrator"}
               </h2>
-              <p className="text-sm" style={{ color: PASIG.muted }}>
+              <p className="text-blue-100 text-sm">
                 {createdAdmin
-                  ? "Admin account has been created with temporary credentials"
-                  : "Add a new administrator to the system"}
+                  ? "Account ready to use"
+                  : "Add new admin to system"}
               </p>
             </div>
           </div>
           <button
             onClick={createdAdmin ? handleCloseAfterCreation : onClose}
-            className="p-2 rounded-lg transition-colors hover:bg-gray-100"
-            style={{ color: PASIG.muted }}
+            className="p-2 text-blue-200 hover:text-white hover:bg-blue-800 rounded-lg transition-colors"
           >
-            <XMarkIcon className="h-6 w-6" />
+            <XMarkIcon className="h-5 w-5" />
           </button>
         </div>
 
         {/* Content */}
         <div className="p-6">
           {createdAdmin ? (
-            // Success view
-            <div className="space-y-6">
-              {/* Admin Details */}
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                <h3 className="font-semibold text-green-900 mb-3">
-                  Admin Account Created
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-green-700">Email:</span>
-                    <span className="font-medium text-green-900">
-                      {createdAdmin.admin.email}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-green-700">Role:</span>
-                    <span className="font-medium text-green-900 capitalize">
-                      {createdAdmin.admin.role.replace("_", " ")}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-green-700">Status:</span>
-                    <span className="font-medium text-green-900 capitalize">
-                      {createdAdmin.admin.status}
-                    </span>
-                  </div>
+            /* Success View */
+            <div className="space-y-4">
+              {/* Account Details */}
+              <div className="text-center">
+                <div className="flex items-center justify-center space-x-2 mb-4">
+                  <span className="px-3 py-1 rounded-full text-xs font-bold border bg-green-100 text-green-800 border-green-300">
+                    CREATED
+                  </span>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                      getRoleInfo(createdAdmin.admin.role).color
+                    }`}
+                  >
+                    {getRoleInfo(createdAdmin.admin.role).name.toUpperCase()}
+                  </span>
                 </div>
+
+                <p className="text-lg font-semibold text-gray-900">
+                  {createdAdmin.admin.email}
+                </p>
+                {form.displayName && (
+                  <p className="text-gray-600">{form.displayName}</p>
+                )}
               </div>
 
-              {/* Temporary Password */}
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                <h3 className="font-semibold text-yellow-900 mb-3 flex items-center">
-                  <span>Temporary Password</span>
-                  <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">
-                    IMPORTANT
+              {/* Password Display */}
+              <div
+                className="border rounded-lg p-4"
+                style={{
+                  backgroundColor: `${PASIG.warning}10`,
+                  borderColor: `${PASIG.warning}40`,
+                }}
+              >
+                <div className="flex items-center space-x-2 mb-2">
+                  <KeyIcon
+                    className="h-4 w-4"
+                    style={{ color: PASIG.primaryNavy }}
+                  />
+                  <span
+                    className="text-sm font-medium"
+                    style={{ color: PASIG.primaryNavy }}
+                  >
+                    Login Password
                   </span>
-                </h3>
+                </div>
 
-                <div className="flex items-center space-x-3 mb-3">
-                  <div className="flex-1 p-3 bg-white border border-yellow-300 rounded-lg">
-                    <code className="text-sm font-mono">
+                <div className="flex items-center space-x-2">
+                  <div
+                    className="flex-1 p-2 bg-white border rounded font-mono text-center text-sm"
+                    style={{ borderColor: `${PASIG.primaryNavy}30` }}
+                  >
+                    <code style={{ color: PASIG.primaryNavy }}>
                       {showPassword
                         ? createdAdmin.temporaryPassword
                         : "••••••••••••"}
@@ -299,205 +329,156 @@ export default function AdminCreationModal({
 
                   <button
                     onClick={() => setShowPassword(!showPassword)}
-                    className="p-2 text-yellow-700 hover:bg-yellow-100 rounded-lg transition-colors"
+                    className="p-2 rounded transition-colors"
+                    style={{
+                      color: PASIG.primaryNavy,
+                      backgroundColor: `${PASIG.primaryNavy}10`,
+                    }}
                   >
                     {showPassword ? (
-                      <EyeSlashIcon className="h-5 w-5" />
+                      <EyeSlashIcon className="h-4 w-4" />
                     ) : (
-                      <EyeIcon className="h-5 w-5" />
+                      <EyeIcon className="h-4 w-4" />
                     )}
                   </button>
 
                   <button
                     onClick={copyPassword}
                     disabled={passwordCopied}
-                    className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    className={`px-3 py-2 text-xs font-medium rounded transition-colors ${
                       passwordCopied
                         ? "bg-green-100 text-green-800"
-                        : "bg-yellow-200 text-yellow-800 hover:bg-yellow-300"
+                        : "text-white"
                     }`}
+                    style={{
+                      backgroundColor: passwordCopied
+                        ? undefined
+                        : PASIG.primaryNavy,
+                    }}
                   >
                     {passwordCopied ? (
                       <>
-                        <CheckIcon className="h-4 w-4" />
-                        <span>Copied!</span>
+                        <CheckIcon className="h-3 w-3 inline mr-1" />
+                        Copied
                       </>
                     ) : (
                       <>
-                        <ClipboardDocumentIcon className="h-4 w-4" />
-                        <span>Copy</span>
+                        <ClipboardDocumentIcon className="h-3 w-3 inline mr-1" />
+                        Copy
                       </>
                     )}
                   </button>
                 </div>
-
-                <div className="text-xs text-yellow-800 space-y-1">
-                  <p>• This password is only shown once - save it securely</p>
-                  <p>• The admin should change this password on first login</p>
-                  <p>
-                    • Send credentials to the admin through a secure channel
-                  </p>
-                </div>
-              </div>
-
-              {/* Next Steps */}
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Next Steps</h3>
-                <div className="text-sm text-blue-800 space-y-1">
-                  <p>
-                    1. Securely share the login credentials with the new admin
-                  </p>
-                  <p>2. Ask them to sign in and change their password</p>
-                  <p>
-                    3. Verify their access to the appropriate admin functions
-                  </p>
-                </div>
               </div>
             </div>
           ) : (
-            // Creation form
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-2"
-                    style={{ color: PASIG.slate }}
-                  >
-                    Email Address *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={form.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    placeholder="admin@pasigcity.gov.ph"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-2"
-                    style={{ color: PASIG.slate }}
-                  >
-                    Role *
-                  </label>
-                  <select
-                    required
-                    value={form.role}
-                    onChange={(e) =>
-                      handleChange(
-                        "role",
-                        e.target.value as "lgu_admin" | "field_admin"
-                      )
-                    }
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  >
-                    <option value="field_admin">
-                      Field Admin - Basic obstacle management
-                    </option>
-                    <option value="lgu_admin">
-                      LGU Admin - Full system access
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Optional Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-2"
-                    style={{ color: PASIG.slate }}
-                  >
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={form.displayName}
-                    onChange={(e) =>
-                      handleChange("displayName", e.target.value)
-                    }
-                    placeholder="Juan Dela Cruz"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    className="block text-sm font-medium mb-2"
-                    style={{ color: PASIG.slate }}
-                  >
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={form.phoneNumber}
-                    onChange={(e) =>
-                      handleChange("phoneNumber", e.target.value)
-                    }
-                    placeholder="+63 912 345 6789"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  />
-                </div>
-              </div>
-
+            /* Creation Form */
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Email */}
               <div>
                 <label
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: PASIG.slate }}
+                  className="flex items-center space-x-2 text-sm font-medium mb-2"
+                  style={{ color: PASIG.primaryNavy }}
                 >
-                  Department
+                  <EnvelopeIcon className="h-4 w-4" />
+                  <span>Email Address *</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={form.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  placeholder="admin@pasigcity.gov.ph"
+                  className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
+                  style={{
+                    borderColor: `${PASIG.primaryNavy}30`,
+                  }}
+                />
+              </div>
+
+              {/* Role */}
+              <div>
+                <label
+                  className="flex items-center space-x-2 text-sm font-medium mb-2"
+                  style={{ color: PASIG.primaryNavy }}
+                >
+                  <ShieldCheckIcon className="h-4 w-4" />
+                  <span>Role *</span>
+                </label>
+                <select
+                  required
+                  value={form.role}
+                  onChange={(e) =>
+                    handleChange(
+                      "role",
+                      e.target.value as "lgu_admin" | "field_admin"
+                    )
+                  }
+                  className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors text-gray-900"
+                  style={{
+                    borderColor: `${PASIG.primaryNavy}30`,
+                  }}
+                >
+                  <option value="field_admin">Field Admin</option>
+                  <option value="lgu_admin">LGU Admin</option>
+                </select>
+              </div>
+
+              {/* Display Name */}
+              <div>
+                <label
+                  className="flex items-center space-x-2 text-sm font-medium mb-2"
+                  style={{ color: PASIG.primaryNavy }}
+                >
+                  <UserIcon className="h-4 w-4" />
+                  <span>Full Name</span>
                 </label>
                 <input
                   type="text"
-                  value={form.department}
-                  onChange={(e) => handleChange("department", e.target.value)}
-                  placeholder="e.g., PWD Affairs Office, City Planning"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  value={form.displayName}
+                  onChange={(e) => handleChange("displayName", e.target.value)}
+                  placeholder="Juan Dela Cruz"
+                  className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
+                  style={{
+                    borderColor: `${PASIG.primaryNavy}30`,
+                  }}
                 />
               </div>
 
+              {/* Password */}
               <div>
                 <label
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: PASIG.slate }}
+                  className="flex items-center space-x-2 text-sm font-medium mb-2"
+                  style={{ color: PASIG.primaryNavy }}
                 >
-                  Notes
+                  <KeyIcon className="h-4 w-4" />
+                  <span>Password *</span>
                 </label>
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => handleChange("notes", e.target.value)}
-                  placeholder="Additional notes about this admin..."
-                  rows={3}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none"
-                />
-              </div>
-
-              {/* Role Description */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-900 mb-2">
-                  {form.role === "lgu_admin"
-                    ? "LGU Admin Permissions"
-                    : "Field Admin Permissions"}
-                </h3>
-                <div className="text-sm text-blue-800">
-                  {form.role === "lgu_admin" ? (
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Full obstacle management and approval</li>
-                      <li>User account management</li>
-                      <li>Create field admin accounts</li>
-                      <li>Access to analytics and reports</li>
-                      <li>View audit logs</li>
-                    </ul>
-                  ) : (
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Basic obstacle verification</li>
-                      <li>View user information</li>
-                      <li>Limited administrative functions</li>
-                    </ul>
-                  )}
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={form.password}
+                    onChange={(e) => handleChange("password", e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    minLength={8}
+                    className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors pr-10 text-gray-900 placeholder-gray-500"
+                    style={{
+                      borderColor: `${PASIG.primaryNavy}30`,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 rounded"
+                    style={{ color: PASIG.primaryNavy }}
+                  >
+                    {showPassword ? (
+                      <EyeSlashIcon className="h-4 w-4" />
+                    ) : (
+                      <EyeIcon className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
               </div>
             </form>
@@ -505,58 +486,56 @@ export default function AdminCreationModal({
         </div>
 
         {/* Footer */}
-        {!createdAdmin && (
-          <div
-            className="flex items-center justify-end space-x-3 px-6 py-4 border-t"
-            style={{ borderColor: PASIG.subtleBorder }}
-          >
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border rounded-lg font-medium transition-colors hover:bg-gray-50"
-              style={{
-                borderColor: PASIG.subtleBorder,
-                color: PASIG.muted,
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!isFormValid() || isSubmitting}
-              className="flex items-center space-x-2 px-6 py-2 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
-              style={{ backgroundColor: PASIG.softBlue }}
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Creating...</span>
-                </>
-              ) : (
-                <>
-                  <UserPlusIcon className="h-4 w-4" />
-                  <span>Create Admin</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Success Footer */}
-        {createdAdmin && (
-          <div
-            className="flex items-center justify-end space-x-3 px-6 py-4 border-t"
-            style={{ borderColor: PASIG.subtleBorder }}
-          >
-            <button
-              onClick={handleCloseAfterCreation}
-              className="px-6 py-2 text-white rounded-lg font-medium transition-colors"
-              style={{ backgroundColor: PASIG.success }}
-            >
-              Done
-            </button>
-          </div>
-        )}
+        <div
+          className="flex items-center justify-between p-4 border-t border-gray-200"
+          style={{ backgroundColor: `${PASIG.primaryNavy}05` }}
+        >
+          {!createdAdmin ? (
+            <>
+              <div className="text-xs text-gray-500">* Required fields</div>
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={!isFormValid() || isSubmitting}
+                  className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 text-sm"
+                  style={{ backgroundColor: PASIG.primaryNavy }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlusIcon className="h-4 w-4" />
+                      <span>Create Admin</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-gray-500">
+                Account created successfully
+              </div>
+              <button
+                onClick={handleCloseAfterCreation}
+                className="px-4 py-2 text-white rounded-lg transition-colors text-sm"
+                style={{ backgroundColor: PASIG.success }}
+              >
+                Done
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

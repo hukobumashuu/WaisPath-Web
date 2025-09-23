@@ -1,5 +1,5 @@
 // src/components/admin/ObstacleDetailModal.tsx
-// Simplified single-tab obstacle detail modal with FIXED soft backdrop
+// Simplified single-tab obstacle detail modal with IMPROVED transparent backdrop
 
 "use client";
 
@@ -13,7 +13,6 @@ import {
   HandThumbUpIcon,
   HandThumbDownIcon,
   PhotoIcon,
-  ClockIcon,
   ShieldCheckIcon,
   InformationCircleIcon,
   ChartBarIcon,
@@ -107,14 +106,11 @@ export default function ObstacleDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* FIXED: Soft backdrop - gentle gray with blur */}
-      <div
-        className="absolute inset-0 bg-gray-500 bg-opacity-30 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      {/* FIXED: Just blur without any background color overlay */}
+      <div className="absolute inset-0 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden border border-gray-200">
+      {/* Modal with enhanced shadow to stand out against the transparent backdrop */}
+      <div className="relative bg-white rounded-2xl shadow-2xl drop-shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden border-2 border-gray-300/50 ring-1 ring-black/5">
         {/* Header */}
         <div
           className="flex items-center justify-between p-6 border-b border-gray-200"
