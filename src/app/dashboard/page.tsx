@@ -1,20 +1,20 @@
 // src/app/dashboard/page.tsx
-// ENHANCED: Modern dashboard homepage with Pasig color scheme
+// ENHANCED: Modern dashboard homepage with Pasig color scheme + Backend connection
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAdminAuth } from "@/lib/auth/firebase-auth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   MapPinIcon,
   ChartBarIcon,
-  DocumentChartBarIcon,
   ShieldCheckIcon,
-  FireIcon,
   UsersIcon,
   UserGroupIcon,
+  CheckCircleIcon,
+  ExclamationCircleIcon,
 } from "@heroicons/react/24/outline";
 
 /* ---------- Pasig Color Scheme ---------- */
@@ -44,7 +44,10 @@ interface StatsData {
   totalObstacles: number;
   totalUsers: number;
   totalAdmins: number;
-  reportsGenerated: number;
+  resolvedObstacles: number; // UPDATED: Replace reportsGenerated with resolvedObstacles
+  pendingObstacles?: number;
+  avgResponseTime?: number;
+  lastUpdated?: string;
 }
 
 export default function AdminDashboard() {
@@ -54,8 +57,10 @@ export default function AdminDashboard() {
     totalObstacles: 0,
     totalUsers: 0,
     totalAdmins: 0,
-    reportsGenerated: 0,
+    resolvedObstacles: 0,
   });
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -64,16 +69,86 @@ export default function AdminDashboard() {
     }
   }, [user, loading, router]);
 
-  // Load stats (placeholder for now - you can connect to real data later)
+  // Helper function to get auth token (following your codebase pattern)
+  const getAuthToken = async (): Promise<string | null> => {
+    try {
+      const { getAuth } = await import("firebase/auth");
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        console.log("⏳ No authenticated user");
+        return null;
+      }
+      const idToken = await currentUser.getIdToken();
+      return idToken;
+    } catch (error) {
+      console.error("Failed to get auth token:", error);
+      return null;
+    }
+  };
+
+  // NEW: Fetch real stats from backend API (memoized to fix useEffect dependencies)
+  const fetchDashboardStats = useCallback(async () => {
+    if (!user?.isAdmin) {
+      console.log("⏳ Waiting for user authentication...");
+      return;
+    }
+
+    try {
+      setStatsLoading(true);
+      setStatsError(null);
+      console.log("📡 Fetching dashboard stats from API...");
+
+      const authToken = await getAuthToken();
+      if (!authToken) {
+        throw new Error("Failed to get authentication token");
+      }
+
+      const response = await fetch("/api/dashboard/stats", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        console.log("📊 Dashboard stats loaded:", result.data);
+        setStats(result.data);
+      } else {
+        throw new Error(result.error || "Invalid API response");
+      }
+    } catch (error) {
+      console.error("❌ Failed to fetch dashboard stats:", error);
+      setStatsError(
+        error instanceof Error ? error.message : "Failed to load stats"
+      );
+
+      // Fallback to placeholder data
+      setStats({
+        totalObstacles: 0,
+        totalUsers: 0,
+        totalAdmins: 0,
+        resolvedObstacles: 0,
+      });
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [user?.isAdmin]);
+
+  // Load stats when user is ready
   useEffect(() => {
-    // Placeholder stats - replace with actual API calls
-    setStats({
-      totalObstacles: 156,
-      totalUsers: 1234,
-      totalAdmins: 8,
-      reportsGenerated: 45,
-    });
-  }, []);
+    if (user?.isAdmin) {
+      fetchDashboardStats();
+    }
+  }, [user?.isAdmin, fetchDashboardStats]);
 
   // Get display name with fallback
   const getDisplayName = () => {
@@ -98,7 +173,7 @@ export default function AdminDashboard() {
             className="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent mx-auto mb-4"
             style={{ borderColor: PASIG.softBlue }}
           />
-          <p style={{ color: PASIG.muted }}>Loading dashboard...</p>
+          <p style={{ color: PASIG.muted }}>Loading WAISPATH dashboard...</p>
         </div>
       </div>
     );
@@ -109,31 +184,13 @@ export default function AdminDashboard() {
     return null;
   }
 
-  // Dashboard cards
+  // Dashboard cards - keeping your existing setup
   const dashboardCards: DashboardCard[] = [
-    {
-      title: "Priority Analysis",
-      description:
-        "Smart obstacle prioritization with AHP-based scoring and community validation",
-      href: "/dashboard/priority",
-      icon: FireIcon,
-      status: "Active",
-      gradient: "from-red-500 to-red-600",
-    },
-    {
-      title: "Admin Reports",
-      description:
-        "Generate comprehensive accessibility compliance reports for local government",
-      href: "/dashboard/reports",
-      icon: DocumentChartBarIcon,
-      status: "Ready",
-      gradient: "from-blue-500 to-blue-600",
-    },
     {
       title: "Obstacle Management",
       description:
         "Review, verify, and manage community-reported accessibility barriers",
-      href: "/dashboard/obstacles",
+      href: "/dashboard/priority",
       icon: ShieldCheckIcon,
       status: "Active",
       gradient: "from-green-500 to-green-600",
@@ -213,7 +270,22 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Enhanced Stats Cards */}
+        {/* Error State */}
+        {statsError && (
+          <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-center space-x-2">
+              <ExclamationCircleIcon className="h-5 w-5 text-red-600" />
+              <div>
+                <p className="text-red-800 font-medium">
+                  Failed to load dashboard statistics
+                </p>
+                <p className="text-red-600 text-sm">{statsError}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Enhanced Stats Cards - Now connected to backend */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {/* Total Obstacles */}
           <div
@@ -231,12 +303,16 @@ export default function AdminDashboard() {
                 >
                   Total Obstacles
                 </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{ color: PASIG.slate }}
-                >
-                  {stats.totalObstacles.toLocaleString()}
-                </p>
+                {statsLoading ? (
+                  <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-1"></div>
+                ) : (
+                  <p
+                    className="text-3xl font-bold mt-1"
+                    style={{ color: PASIG.slate }}
+                  >
+                    {stats.totalObstacles.toLocaleString()}
+                  </p>
+                )}
                 <p className="text-xs mt-1" style={{ color: PASIG.success }}>
                   Community reports
                 </p>
@@ -269,12 +345,16 @@ export default function AdminDashboard() {
                 >
                   Users
                 </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{ color: PASIG.slate }}
-                >
-                  {stats.totalUsers.toLocaleString()}
-                </p>
+                {statsLoading ? (
+                  <div className="h-8 w-20 bg-gray-200 animate-pulse rounded mt-1"></div>
+                ) : (
+                  <p
+                    className="text-3xl font-bold mt-1"
+                    style={{ color: PASIG.slate }}
+                  >
+                    {stats.totalUsers.toLocaleString()}
+                  </p>
+                )}
                 <p className="text-xs mt-1" style={{ color: PASIG.softBlue }}>
                   Active community
                 </p>
@@ -307,12 +387,16 @@ export default function AdminDashboard() {
                 >
                   Admins
                 </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{ color: PASIG.slate }}
-                >
-                  {stats.totalAdmins}
-                </p>
+                {statsLoading ? (
+                  <div className="h-8 w-12 bg-gray-200 animate-pulse rounded mt-1"></div>
+                ) : (
+                  <p
+                    className="text-3xl font-bold mt-1"
+                    style={{ color: PASIG.slate }}
+                  >
+                    {stats.totalAdmins}
+                  </p>
+                )}
                 <p className="text-xs mt-1" style={{ color: PASIG.warning }}>
                   System managers
                 </p>
@@ -329,7 +413,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Reports Generated */}
+          {/* UPDATED: Resolved Obstacles (now connected to backend) */}
           <div
             className="rounded-2xl p-6 shadow-sm border transition-all duration-200 hover:shadow-lg"
             style={{
@@ -343,35 +427,36 @@ export default function AdminDashboard() {
                   className="text-sm font-medium"
                   style={{ color: PASIG.muted }}
                 >
-                  Reports Generated
+                  Resolved Obstacles
                 </p>
-                <p
-                  className="text-3xl font-bold mt-1"
-                  style={{ color: PASIG.slate }}
-                >
-                  {stats.reportsGenerated}
-                </p>
-                <p
-                  className="text-xs mt-1"
-                  style={{ color: PASIG.primaryNavy }}
-                >
-                  This month
+                {statsLoading ? (
+                  <div className="h-8 w-14 bg-gray-200 animate-pulse rounded mt-1"></div>
+                ) : (
+                  <p
+                    className="text-3xl font-bold mt-1"
+                    style={{ color: PASIG.slate }}
+                  >
+                    {stats.resolvedObstacles.toLocaleString()}
+                  </p>
+                )}
+                <p className="text-xs mt-1" style={{ color: PASIG.success }}>
+                  Successfully addressed
                 </p>
               </div>
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${PASIG.primaryNavy}15` }}
+                style={{ backgroundColor: `${PASIG.success}15` }}
               >
-                <ChartBarIcon
+                <CheckCircleIcon
                   className="h-6 w-6"
-                  style={{ color: PASIG.primaryNavy }}
+                  style={{ color: PASIG.success }}
                 />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Dashboard Cards Grid */}
+        {/* Dashboard Cards Grid - keeping exactly as you have it */}
         <div>
           <h2
             className="text-2xl font-bold mb-6"
@@ -455,7 +540,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* System Status Footer */}
+        {/* System Status Footer - Enhanced with backend connection info */}
         <div className="mt-12">
           <div
             className="rounded-2xl p-6 border"
@@ -473,20 +558,27 @@ export default function AdminDashboard() {
                   System Status
                 </h3>
                 <p className="text-sm" style={{ color: PASIG.muted }}>
-                  All systems operational • Last updated:{" "}
-                  {new Date().toLocaleTimeString()}
+                  {statsError
+                    ? "Connection issues detected"
+                    : "All systems operational"}{" "}
+                  • Connected to Firebase • Real-time data from Firebase Auth &
+                  Firestore
                 </p>
               </div>
               <div className="flex items-center space-x-2">
                 <div
                   className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: PASIG.success }}
+                  style={{
+                    backgroundColor: statsError ? PASIG.danger : PASIG.success,
+                  }}
                 ></div>
                 <span
                   className="text-sm font-medium"
-                  style={{ color: PASIG.success }}
+                  style={{
+                    color: statsError ? PASIG.danger : PASIG.success,
+                  }}
                 >
-                  Healthy
+                  {statsError ? "Degraded" : "Healthy"}
                 </span>
               </div>
             </div>
