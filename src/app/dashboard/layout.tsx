@@ -90,7 +90,6 @@ export default function DashboardLayout({
       current: pathname === "/dashboard/audit",
       auditOnly: true,
       description: "Track admin activities",
-      badge: "Enhanced",
     },
     {
       name: "Settings",

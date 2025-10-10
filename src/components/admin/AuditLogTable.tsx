@@ -5,7 +5,6 @@
 
 import React from "react";
 import {
-  DocumentTextIcon,
   DevicePhoneMobileIcon,
   ComputerDesktopIcon,
   ShieldCheckIcon,
@@ -124,28 +123,8 @@ export default function AuditLogTable({
   }
 
   if (logs.length === 0) {
-    return (
-      <div
-        className="rounded-2xl shadow-sm border"
-        style={{
-          backgroundColor: PASIG.card,
-          borderColor: PASIG.subtleBorder,
-        }}
-      >
-        <div className="text-center py-16">
-          <DocumentTextIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            No audit logs found
-          </h3>
-          <p className="text-sm text-gray-500 max-w-sm mx-auto">
-            Admin activities will appear here when they occur. Try adjusting
-            your filters or date range.
-          </p>
-        </div>
-      </div>
-    );
+    return null;
   }
-
   return (
     <div
       className="rounded-2xl shadow-sm border overflow-hidden"

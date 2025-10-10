@@ -1,5 +1,5 @@
 // src/app/dashboard/audit/page.tsx
-// UPDATED: Responsive design matching current version with fixed filters and pagination
+// UPDATED: Instant filtering, date presets at top, grouped actions
 
 "use client";
 
@@ -108,6 +108,28 @@ const getAuthToken = async (): Promise<string | null> => {
   }
 };
 
+// Helper to calculate date ranges for presets
+const getDateRange = (preset: "24h" | "7d" | "30d" | "all") => {
+  const now = new Date();
+  const start = new Date();
+
+  switch (preset) {
+    case "24h":
+      start.setHours(start.getHours() - 24);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case "7d":
+      start.setDate(start.getDate() - 7);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case "30d":
+      start.setDate(start.getDate() - 30);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case "all":
+      return { startDate: "", endDate: "" };
+    default:
+      return { startDate: "", endDate: "" };
+  }
+};
+
 export default function AuditLogsPage() {
   const { user, loading, hasPermission, hasRole } = useAdminAuth();
   const router = useRouter();
@@ -124,26 +146,21 @@ export default function AuditLogsPage() {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [hasPreviousPage, setHasPreviousPage] = useState(false);
 
-  // FIXED: Separate form filters from applied filters
+  // UPDATED: Single filter state for instant filtering (REMOVED source and targetType from active use)
   const [filters, setFilters] = useState<FilterState>({
     adminEmail: "",
     action: "",
-    targetType: "",
-    source: "",
+    targetType: "", // Kept for compatibility but not used in UI
+    source: "", // Kept for compatibility but not used in UI
     startDate: "",
     endDate: "",
     search: "",
   });
 
-  const [appliedFilters, setAppliedFilters] = useState<FilterState>({
-    adminEmail: "",
-    action: "",
-    targetType: "",
-    source: "",
-    startDate: "",
-    endDate: "",
-    search: "",
-  });
+  // NEW: Date preset state
+  const [datePreset, setDatePreset] = useState<"24h" | "7d" | "30d" | "all">(
+    "7d"
+  );
 
   // Admin names for display
   const [adminNames, setAdminNames] = useState<Record<string, string>>({});
@@ -159,7 +176,52 @@ export default function AuditLogsPage() {
     hasRole("super_admin") ||
     hasRole("lgu_admin");
 
-  // Load audit logs using appliedFilters
+  // UPDATED: Instant filter change handler with debouncing for email
+  const [emailDebounceTimer, setEmailDebounceTimer] =
+    useState<NodeJS.Timeout | null>(null);
+
+  const handleFilterChange = useCallback(
+    (key: keyof FilterState, value: string) => {
+      if (key === "adminEmail") {
+        // Debounce admin email input (500ms delay)
+        if (emailDebounceTimer) {
+          clearTimeout(emailDebounceTimer);
+        }
+
+        const timer = setTimeout(() => {
+          setFilters((prev) => ({ ...prev, [key]: value }));
+          setCurrentPage(1); // Reset to page 1 when filter changes
+        }, 500);
+
+        setEmailDebounceTimer(timer);
+      } else {
+        // Instant filter for dropdowns
+        setFilters((prev) => ({ ...prev, [key]: value }));
+        setCurrentPage(1); // Reset to page 1 when filter changes
+      }
+    },
+    [emailDebounceTimer]
+  );
+
+  // NEW: Handle date preset changes
+  const handleDatePresetChange = useCallback(
+    (preset: "24h" | "7d" | "30d" | "all") => {
+      setDatePreset(preset);
+      const dateRange = getDateRange(preset);
+      setFilters((prev) => ({
+        ...prev,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+      }));
+      setCurrentPage(1);
+      toast.success(
+        `Showing logs from last ${preset === "all" ? "all time" : preset}`
+      );
+    },
+    []
+  );
+
+  // Load audit logs - triggers automatically when filters change
   const loadAuditLogs = useCallback(async () => {
     if (!canViewAuditLogs) return;
 
@@ -172,29 +234,24 @@ export default function AuditLogsPage() {
         return;
       }
 
-      // Build query parameters using appliedFilters
+      // Build query parameters using filters
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: "25",
       });
 
-      if (appliedFilters.adminEmail) {
-        params.append("adminId", appliedFilters.adminEmail);
+      if (filters.adminEmail) {
+        params.append("adminId", filters.adminEmail);
       }
-      if (appliedFilters.action) {
-        params.append("action", appliedFilters.action);
+      if (filters.action) {
+        params.append("action", filters.action);
       }
-      if (appliedFilters.targetType) {
-        params.append("targetType", appliedFilters.targetType);
+      // REMOVED: targetType and source filters (not in UI anymore)
+      if (filters.startDate) {
+        params.append("startDate", filters.startDate);
       }
-      if (appliedFilters.source) {
-        params.append("source", appliedFilters.source);
-      }
-      if (appliedFilters.startDate) {
-        params.append("startDate", appliedFilters.startDate);
-      }
-      if (appliedFilters.endDate) {
-        params.append("endDate", appliedFilters.endDate);
+      if (filters.endDate) {
+        params.append("endDate", filters.endDate);
       }
 
       const response = await fetch(`/api/audit/logs?${params.toString()}`, {
@@ -239,7 +296,7 @@ export default function AuditLogsPage() {
     } finally {
       setLoadingLogs(false);
     }
-  }, [currentPage, appliedFilters, canViewAuditLogs]);
+  }, [currentPage, filters, canViewAuditLogs]);
 
   // Load audit statistics
   const loadAuditStats = useCallback(async () => {
@@ -294,28 +351,20 @@ export default function AuditLogsPage() {
     }
   }, [auditLogs]);
 
-  // FIXED: Handle filter submission (apply only when form submitted)
-  const handleFilterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAppliedFilters({ ...filters });
-    setCurrentPage(1);
-    toast.success("Filters applied");
-  };
-
-  // FIXED: Handle filter reset
+  // UPDATED: Reset filters handler
   const handleResetFilters = () => {
     const emptyFilters = {
       adminEmail: "",
       action: "",
-      targetType: "",
-      source: "",
+      targetType: "", // Kept for compatibility
+      source: "", // Kept for compatibility
       startDate: "",
       endDate: "",
       search: "",
     };
 
     setFilters(emptyFilters);
-    setAppliedFilters(emptyFilters);
+    setDatePreset("all");
     setCurrentPage(1);
     toast.success("Filters cleared");
   };
@@ -340,6 +389,16 @@ export default function AuditLogsPage() {
       loadAdminNames();
     }
   }, [auditLogs, loadAdminNames]);
+
+  // Set initial date filter on mount
+  useEffect(() => {
+    const initialDateRange = getDateRange("7d");
+    setFilters((prev) => ({
+      ...prev,
+      startDate: initialDateRange.startDate,
+      endDate: initialDateRange.endDate,
+    }));
+  }, []);
 
   // Export functionality
   const handleExport = async () => {
@@ -378,48 +437,51 @@ export default function AuditLogsPage() {
           : "",
       ]);
 
-      const csvContent = [csvHeaders, ...csvRows]
-        .map((row) => row.map((cell) => `"${cell}"`).join(","))
-        .join("\n");
+      const csvContent = [
+        csvHeaders.join(","),
+        ...csvRows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
+      ].join("\n");
 
       const blob = new Blob([csvContent], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `audit-logs-${
-        new Date().toISOString().split("T")[0]
-      }.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-logs-${new Date().toISOString()}.csv`;
+      a.click();
 
       toast.success("Audit logs exported successfully");
     } catch (error) {
-      console.error("Export failed:", error);
+      console.error("Failed to export audit logs:", error);
       toast.error("Failed to export audit logs");
     }
   };
 
   // Pagination handlers
-  const handlePreviousPage = () => {
-    if (hasPreviousPage) {
-      setCurrentPage((prev) => prev - 1);
-    }
-  };
-
   const handleNextPage = () => {
     if (hasNextPage) {
       setCurrentPage((prev) => prev + 1);
     }
   };
 
+  const handlePreviousPage = () => {
+    if (hasPreviousPage) {
+      setCurrentPage((prev) => prev - 1);
+    }
+  };
+
+  // Loading states
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div
+        className="flex items-center justify-center min-h-screen"
+        style={{ backgroundColor: PASIG.bg }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
+            style={{ borderColor: PASIG.softBlue }}
+          ></div>
+          <p style={{ color: PASIG.muted }}>Loading audit logs...</p>
         </div>
       </div>
     );
@@ -427,14 +489,25 @@ export default function AuditLogsPage() {
 
   if (!user?.isAdmin || !canViewAuditLogs) {
     return (
-      <div className="text-center py-12">
-        <ShieldCheckIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">
-          Access Denied
-        </h2>
-        <p className="text-gray-600">
-          You don&apos;t have permission to view audit logs.
-        </p>
+      <div
+        className="flex items-center justify-center min-h-screen"
+        style={{ backgroundColor: PASIG.bg }}
+      >
+        <div className="text-center">
+          <ShieldCheckIcon
+            className="h-16 w-16 mx-auto mb-4"
+            style={{ color: PASIG.muted }}
+          />
+          <h2
+            className="text-xl font-semibold mb-2"
+            style={{ color: PASIG.slate }}
+          >
+            Access Denied
+          </h2>
+          <p style={{ color: PASIG.muted }}>
+            You don&apos;t have permission to view audit logs.
+          </p>
+        </div>
       </div>
     );
   }
@@ -443,9 +516,8 @@ export default function AuditLogsPage() {
     <div className="min-h-screen" style={{ backgroundColor: PASIG.bg }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Toaster position="top-right" />
-
-        {/* Responsive Header */}
-        <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 mb-8">
+        {/* Header */}
+        <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 mb-6">
           <div>
             <h1
               className="text-2xl sm:text-3xl font-bold"
@@ -461,151 +533,177 @@ export default function AuditLogsPage() {
             </p>
           </div>
 
-          <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
-            {/* Stats Timeframe Selector */}
-            <select
-              value={statsTimeframe}
-              onChange={(e) =>
-                setStatsTimeframe(e.target.value as "24h" | "7d" | "30d")
-              }
-              className="w-full sm:w-auto px-3 py-2 border rounded-lg text-sm"
-              style={{
-                borderColor: PASIG.subtleBorder,
-                backgroundColor: PASIG.card,
-                color: PASIG.slate,
-              }}
-            >
-              <option value="24h">Last 24 Hours</option>
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-            </select>
-
-            {/* Export Button */}
-            <button
-              onClick={handleExport}
-              disabled={auditLogs.length === 0}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white rounded-xl transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: PASIG.primaryNavy }}
-            >
-              <ArrowDownTrayIcon className="h-5 w-5" />
-              Export CSV
-            </button>
-          </div>
+          {/* Export Button */}
+          <button
+            onClick={handleExport}
+            disabled={auditLogs.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white font-medium transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: PASIG.softBlue }}
+          >
+            <ArrowDownTrayIcon className="h-5 w-5" />
+            Export CSV
+          </button>
         </div>
-
-        {/* Statistics Cards */}
-        {auditStats && (
-          <div className="mb-8">
-            <AuditStatsCards stats={auditStats} loading={loadingStats} />
-          </div>
-        )}
-
-        {/* Filters Panel */}
-        <div className="mb-8">
-          <AuditFiltersPanel
-            filters={filters}
-            setFilters={setFilters}
-            onSubmit={handleFilterSubmit}
-            onReset={handleResetFilters}
-            show={showFilters}
-            onToggle={() => setShowFilters(!showFilters)}
-          />
-        </div>
-
-        {/* Audit Log Table */}
-        <div className="mb-8">
-          <AuditLogTable
-            logs={auditLogs}
-            loading={loadingLogs}
-            adminNames={adminNames}
-          />
-        </div>
-
-        {/* RESPONSIVE: Enhanced Pagination */}
-        {totalPages > 1 && (
-          <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-            <div
-              className="text-sm text-center sm:text-left"
-              style={{ color: PASIG.muted }}
-            >
-              Page {currentPage} of {totalPages}
-            </div>
-
-            <div className="flex items-center justify-center space-x-1">
-              {/* Previous Button */}
-              <button
-                onClick={handlePreviousPage}
-                disabled={!hasPreviousPage}
-                className="flex items-center gap-1 px-3 py-2 text-sm font-medium border rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                style={{
-                  borderColor: PASIG.subtleBorder,
-                  backgroundColor: PASIG.card,
-                  color: PASIG.slate,
-                }}
-              >
-                <ChevronLeftIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Previous</span>
-              </button>
-
-              {/* Page Numbers - Responsive */}
-              <div className="hidden sm:flex items-center space-x-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else {
-                    // Smart pagination for large page counts
-                    if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                  }
-
-                  const isActive = pageNum === currentPage;
-
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className="px-3 py-2 text-sm font-medium rounded-lg transition-colors"
-                      style={{
-                        backgroundColor: isActive ? PASIG.softBlue : PASIG.card,
-                        color: isActive ? "white" : PASIG.slate,
-                        border: `1px solid ${PASIG.subtleBorder}`,
-                      }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Mobile Page Info */}
-              <div
-                className="sm:hidden px-3 py-2 text-sm font-medium"
+        {/* NEW: Date Filter Presets at Top */}
+        <div
+          className="rounded-2xl p-4 mb-6 shadow-sm border"
+          style={{
+            backgroundColor: PASIG.card,
+            borderColor: PASIG.subtleBorder,
+          }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span
+                className="text-sm font-medium"
                 style={{ color: PASIG.slate }}
               >
-                {currentPage} / {totalPages}
-              </div>
+                📅 Time Range:
+              </span>
+            </div>
 
-              {/* Next Button */}
-              <button
-                onClick={handleNextPage}
-                disabled={!hasNextPage}
-                className="flex items-center gap-1 px-3 py-2 text-sm font-medium border rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            {/* Date Preset Buttons */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "24h" as const, label: "Last 24 Hours" },
+                { value: "7d" as const, label: "Last 7 Days" },
+                { value: "30d" as const, label: "Last 30 Days" },
+                { value: "all" as const, label: "All Time" },
+              ].map((preset) => (
+                <button
+                  key={preset.value}
+                  onClick={() => handleDatePresetChange(preset.value)}
+                  className="px-4 py-2 rounded-lg font-medium transition-all duration-200 text-sm"
+                  style={{
+                    backgroundColor:
+                      datePreset === preset.value ? PASIG.softBlue : PASIG.card,
+                    color: datePreset === preset.value ? "white" : PASIG.slate,
+                    border: `2px solid ${
+                      datePreset === preset.value
+                        ? PASIG.softBlue
+                        : PASIG.subtleBorder
+                    }`,
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Stats Timeframe Selector (for stats cards) */}
+            <div className="flex items-center gap-2">
+              <span
+                className="text-sm font-medium"
+                style={{ color: PASIG.muted }}
+              >
+                Stats:
+              </span>
+              <select
+                value={statsTimeframe}
+                onChange={(e) =>
+                  setStatsTimeframe(e.target.value as "24h" | "7d" | "30d")
+                }
+                className="px-3 py-2 border rounded-lg text-sm"
                 style={{
                   borderColor: PASIG.subtleBorder,
                   backgroundColor: PASIG.card,
                   color: PASIG.slate,
                 }}
               >
-                <span className="hidden sm:inline">Next</span>
-                <ChevronRightIcon className="h-4 w-4" />
-              </button>
+                <option value="24h">24h</option>
+                <option value="7d">7d</option>
+                <option value="30d">30d</option>
+              </select>
             </div>
+          </div>
+        </div>
+        {/* Stats Cards - FIXED: Only pass stats and loading props */}{" "}
+        {auditStats && (
+          <AuditStatsCards stats={auditStats} loading={loadingStats} />
+        )}
+        {/* UPDATED: Filters Panel with instant filtering */}
+        <AuditFiltersPanel
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onReset={handleResetFilters}
+          show={showFilters}
+          onToggle={() => setShowFilters(!showFilters)}
+        />
+        {/* Audit Logs Table */}
+        <AuditLogTable
+          logs={auditLogs}
+          loading={loadingLogs}
+          adminNames={adminNames}
+        />
+        {/* Pagination */}
+        {!loadingLogs && auditLogs.length > 0 && (
+          <div
+            className="mt-6 rounded-2xl p-4 shadow-sm border"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-sm" style={{ color: PASIG.muted }}>
+                Page {currentPage} of {totalPages}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePreviousPage}
+                  disabled={!hasPreviousPage}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-md"
+                  style={{
+                    borderColor: PASIG.subtleBorder,
+                    color: PASIG.slate,
+                    backgroundColor: PASIG.card,
+                  }}
+                >
+                  <ChevronLeftIcon className="h-4 w-4" />
+                  Previous
+                </button>
+
+                <button
+                  onClick={handleNextPage}
+                  disabled={!hasNextPage}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-md"
+                  style={{
+                    borderColor: PASIG.subtleBorder,
+                    color: PASIG.slate,
+                    backgroundColor: PASIG.card,
+                  }}
+                >
+                  Next
+                  <ChevronRightIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Empty State - SINGLE MESSAGE ONLY */}
+        {!loadingLogs && auditLogs.length === 0 && (
+          <div
+            className="rounded-2xl p-12 text-center shadow-sm border"
+            style={{
+              backgroundColor: PASIG.card,
+              borderColor: PASIG.subtleBorder,
+            }}
+          >
+            <ShieldCheckIcon
+              className="h-12 w-12 mx-auto mb-4"
+              style={{ color: PASIG.muted }}
+            />
+            <h3
+              className="text-lg font-semibold mb-2"
+              style={{ color: PASIG.slate }}
+            >
+              No Activity Logs Found
+            </h3>
+            <p style={{ color: PASIG.muted }}>
+              No activity logs match your current filters. Try adjusting the
+              date range or clearing filters.
+            </p>
           </div>
         )}
       </div>

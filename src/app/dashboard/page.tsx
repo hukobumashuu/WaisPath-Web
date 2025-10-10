@@ -219,7 +219,7 @@ export default function AdminDashboard() {
         "Monitor admin activities and system events with detailed audit trails",
       href: "/dashboard/audit",
       icon: ChartBarIcon,
-      status: "Enhanced",
+      status: "Ready",
       gradient: "from-orange-500 to-orange-600",
     },
   ];
