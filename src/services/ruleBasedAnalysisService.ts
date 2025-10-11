@@ -138,27 +138,23 @@ export class RuleBasedAnalysisService {
     return Math.min(30, points); // Cap at 30 points
   }
 
-  // ✅ STEP 1E: RULE 3 - Critical Infrastructure (20% weight)
   private getCriticalInfrastructurePoints(type: ObstacleType): number {
-    // These obstacle types represent critical infrastructure failures
-    // that violate basic accessibility standards
-    const criticalTypes = {
-      no_sidewalk: 20, // Missing basic infrastructure (violates standards)
-      stairs_no_ramp: 20, // ADA/BP 344 compliance violation
-      construction: 15, // Temporary but blocking accessibility
-      flooding: 15, // Safety hazard affecting accessibility
-      // All other types get 0 points from this rule
-      vendor_blocking: 0, // Enforcement issue, not infrastructure
-      parked_vehicles: 0, // Enforcement issue, not infrastructure
-      broken_pavement: 0, // Maintenance issue, not critical infrastructure
-      narrow_passage: 0, // Design issue, but not critical
-      electrical_post: 0, // Utility placement issue
-      tree_roots: 0, // Natural/maintenance issue
-      steep_slope: 0, // Design issue, but not critical infrastructure
-      other: 0, // Unknown type
+    const criticalTypes: Record<ObstacleType, number> = {
+      vendor_blocking: 0,
+      parked_vehicles: 0,
+      construction: 15,
+      electrical_post: 0,
+      no_sidewalk: 20,
+      flooding: 15,
+      stairs_no_ramp: 20,
+      narrow_passage: 0,
+      broken_infrastructure: 10, // new: infrastructure damage gets moderate points
+      debris: 0, // new: debris is important but not infrastructure failure
+      steep_slope: 0,
+      other: 0,
     };
 
-    return criticalTypes[type] || 0;
+    return criticalTypes[type] ?? 0;
   }
 
   // ✅ STEP 1F: RULE 4 - Admin Verification (10% weight)
@@ -186,16 +182,15 @@ export class RuleBasedAnalysisService {
 
   // ✅ STEP 1H: Generate specific recommendations
   private generateRecommendation(obstacle: AdminObstacle): string {
-    // Evidence-based recommendations from flowchart
-    const recommendations = {
+    const recommendations: Record<ObstacleType, string> = {
       stairs_no_ramp:
         "Install wheelchair-accessible ramp meeting Philippine building code standards (BP 344 compliance)",
       vendor_blocking:
         "Establish vendor-free walkways with designated vendor zones (enforcement + urban planning)",
       parked_vehicles:
         "Install no-parking signs and enforce vehicle-free sidewalk zones (traffic management)",
-      broken_pavement:
-        "Repair and smooth pavement surface for safe wheelchair access (infrastructure maintenance)",
+      broken_infrastructure:
+        "Repair damaged infrastructure (pavement, curbs) to provide smooth, level surfaces for wheelchair access",
       no_sidewalk:
         "Construct accessible sidewalk with proper width and surface materials (major infrastructure)",
       construction:
@@ -206,15 +201,15 @@ export class RuleBasedAnalysisService {
         "Widen walkway to meet minimum accessibility width requirements (1.5m minimum)",
       electrical_post:
         "Relocate utility obstacles to maintain clear pedestrian path (utility coordination)",
-      tree_roots:
-        "Repair walkway surface and install root barriers to prevent future damage",
+      debris:
+        "Clear debris and schedule regular street cleaning; consider trash bins and signage",
       steep_slope:
         "Install accessibility ramps or provide alternative accessible route",
       other:
         "Investigate obstacle details and implement appropriate accessibility solution",
     };
 
-    return recommendations[obstacle.type] || recommendations.other;
+    return recommendations[obstacle.type] ?? recommendations.other;
   }
 
   // ✅ STEP 1I: Implementation categorization
@@ -328,6 +323,10 @@ export class RuleBasedAnalysisService {
         status: "verified",
         verified: true,
         createdAt: new Date(),
+        // computed getter required by AdminObstacle interface
+        get validationCount() {
+          return (this.upvotes || 0) + (this.downvotes || 0);
+        },
       },
       {
         id: "test_2",
@@ -342,11 +341,15 @@ export class RuleBasedAnalysisService {
         status: "pending",
         verified: false,
         createdAt: new Date(),
+        get validationCount() {
+          return (this.upvotes || 0) + (this.downvotes || 0);
+        },
       },
       {
         id: "test_3",
         location: { latitude: 14.57, longitude: 121.08 },
-        type: "broken_pavement",
+        // use the new type name instead of removed 'broken_pavement'
+        type: "broken_infrastructure",
         severity: "high",
         description: "Large potholes making wheelchair passage dangerous",
         reportedBy: "user_003",
@@ -356,6 +359,9 @@ export class RuleBasedAnalysisService {
         status: "verified",
         verified: true,
         createdAt: new Date(),
+        get validationCount() {
+          return (this.upvotes || 0) + (this.downvotes || 0);
+        },
       },
     ];
 

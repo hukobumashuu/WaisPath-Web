@@ -1,7 +1,12 @@
 // src/lib/priority/PriorityCalculator.ts
 // Separated priority calculation logic for better maintainability
 
-import { AdminObstacle, ObstacleStatus, ObstacleType } from "@/types/admin";
+import {
+  AdminObstacle,
+  ObstacleStatus,
+  ObstacleType,
+  ObstacleSeverity,
+} from "@/types/admin";
 
 export interface PriorityResult {
   score: number;
@@ -72,15 +77,21 @@ export class PriorityCalculator {
     };
   }
 
-  private getSeverityPoints(severity: string): number {
-    const severityMap = { low: 10, medium: 20, high: 30, blocking: 40 };
-    const points = severityMap[severity as keyof typeof severityMap] || 0;
+  // tightened typing to ObstacleSeverity for clarity
+  private getSeverityPoints(severity: ObstacleSeverity): number {
+    const severityMap: Record<ObstacleSeverity, number> = {
+      low: 10,
+      medium: 20,
+      high: 30,
+      blocking: 40,
+    };
+    const points = severityMap[severity] ?? 0;
     console.log(`Severity points for ${severity}: ${points}`);
     return points;
   }
 
   private getCommunityPoints(upvotes: number, downvotes: number): number {
-    const netVotes = upvotes - downvotes;
+    const netVotes = (upvotes || 0) - (downvotes || 0);
     const points = Math.max(0, Math.min(30, netVotes * 5));
     console.log(
       `Community points (${upvotes} up, ${downvotes} down): ${points}`
@@ -100,7 +111,7 @@ export class PriorityCalculator {
   }
 
   private getAdminPoints(status: ObstacleStatus): number {
-    const statusPoints = {
+    const statusPoints: Record<ObstacleStatus, number> = {
       pending: 0,
       verified: 10,
       resolved: -20,
@@ -119,22 +130,27 @@ export class PriorityCalculator {
   }
 
   private getRecommendation(type: ObstacleType): string {
-    const recommendations = {
+    // Use Record<ObstacleType, string> so every ObstacleType is covered at compile time
+    const recommendations: Record<ObstacleType, string> = {
       vendor_blocking:
         "Coordinate with local authorities for vendor management",
       parked_vehicles: "Implement parking enforcement and signage",
       construction: "Require accessible temporary pathways during construction",
       electrical_post: "Relocate or mark pole with tactile indicators",
-      tree_roots: "Repair pathway and install root barriers",
+      // removed tree_roots (no longer in types) — replaced by generic guidance
       no_sidewalk: "Construct accessible sidewalk with proper curb cuts",
       flooding: "Improve drainage and install accessible walkways",
       stairs_no_ramp: "Install compliant accessibility ramp",
       narrow_passage: "Widen pathway to minimum accessible width",
-      broken_pavement: "Repair pavement with smooth, level surface",
+      // replaced broken_pavement -> broken_infrastructure guidance
+      broken_infrastructure: "Repair broken infrastructure for smooth surfaces",
       steep_slope: "Install ramp or alternative accessible route",
       other:
         "Assess specific accessibility barriers and implement appropriate solution",
+      // newly added 'debris' handling
+      debris: "Clear debris and install regular street cleaning schedules",
     };
+
     return recommendations[type];
   }
 
@@ -154,7 +170,10 @@ export class PriorityCalculator {
 
   private getTimeframe(type: ObstacleType): string {
     const category = this.getImplementationCategory(type);
-    const timeframes = {
+    const timeframes: Record<
+      "Quick Fix" | "Medium Project" | "Major Infrastructure",
+      string
+    > = {
       "Quick Fix": "1-30 days (enforcement/management)",
       "Medium Project": "1-6 months (repairs/modifications)",
       "Major Infrastructure": "6+ months (construction/major work)",

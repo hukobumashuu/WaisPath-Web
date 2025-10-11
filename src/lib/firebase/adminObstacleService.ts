@@ -123,6 +123,11 @@ function convertFirebaseToAdminObstacle(
     upvotes: typeof data.upvotes === "number" ? data.upvotes : 0,
     downvotes: typeof data.downvotes === "number" ? data.downvotes : 0,
 
+    // computed accessor required by the AdminObstacle interface
+    get validationCount() {
+      return (this.upvotes || 0) + (this.downvotes || 0);
+    },
+
     status: (data.status as ObstacleStatus) || "pending",
     verified: !!data.verified,
     reviewedBy: data.reviewedBy,
