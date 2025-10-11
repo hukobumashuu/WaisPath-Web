@@ -18,18 +18,18 @@ export interface UserLocation {
  * - ✅ ADDED: "debris" (new obstacle type for trash/debris)
  */
 export type ObstacleType =
-  | "vendor_blocking" // Vendors/stalls blocking path
-  | "parked_vehicles" // Vehicles parked on sidewalk/ramp
-  | "construction" // Construction blocking path
-  | "electrical_post" // Electrical post in middle of path
-  | "no_sidewalk" // Missing sidewalk
-  | "flooding" // Water/flooding on path
-  | "stairs_no_ramp" // Stairs without accessible ramp
-  | "narrow_passage" // Path too narrow for wheelchair
-  | "broken_infrastructure" // ✅ NEW: Broken ramps, sidewalks, facilities
-  | "debris" // ✅ NEW: Trash, debris, or litter on path
-  | "steep_slope" // Slope too steep for safe navigation
-  | "other"; // Other obstacles not listed
+  | "vendor_blocking"
+  | "parked_vehicles"
+  | "construction"
+  | "electrical_post"
+  | "no_sidewalk"
+  | "flooding"
+  | "stairs_no_ramp"
+  | "narrow_passage"
+  | "broken_infrastructure" // ✅ ADD
+  | "debris" // ✅ ADD
+  | "steep_slope"
+  | "other";
 
 /**
  * ObstacleSeverity - How much the obstacle impacts mobility
