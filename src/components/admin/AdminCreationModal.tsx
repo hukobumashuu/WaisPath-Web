@@ -1,5 +1,5 @@
 // src/components/admin/AdminCreationModal.tsx
-// Simplified admin creation modal - like basic registration
+// UPDATED: Added password strength indicator and confirm password field
 
 "use client";
 
@@ -18,6 +18,8 @@ import {
 } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import { getAuth } from "firebase/auth";
+import { isPasswordValid, passwordsMatch } from "@/lib/utils/passwordValidator";
+import PasswordStrengthIndicator from "@/components/common/PasswordStrengthIndicator";
 
 const PASIG = {
   primaryNavy: "#08345A",
@@ -43,6 +45,7 @@ interface CreateAdminForm {
   role: "lgu_admin" | "field_admin";
   displayName: string;
   password: string;
+  confirmPassword: string; // ✅ NEW: Confirm password field
 }
 
 interface CreatedAdminResult {
@@ -68,6 +71,7 @@ export default function AdminCreationModal({
     role: "field_admin",
     displayName: "",
     password: "",
+    confirmPassword: "", // ✅ NEW: Initialize confirm password
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,6 +79,7 @@ export default function AdminCreationModal({
     null
   );
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false); // ✅ NEW: Separate toggle for confirm password
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   // Handle escape key and backdrop clicks
@@ -102,9 +107,11 @@ export default function AdminCreationModal({
         role: "field_admin",
         displayName: "",
         password: "",
+        confirmPassword: "", // ✅ NEW: Reset confirm password
       });
       setCreatedAdmin(null);
       setShowPassword(false);
+      setShowConfirmPassword(false); // ✅ NEW: Reset confirm password visibility
       setPasswordCopied(false);
     }
   }, [isOpen]);
@@ -129,18 +136,34 @@ export default function AdminCreationModal({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Validate form
+  // ✅ UPDATED: Enhanced form validation with password matching
   const isFormValid = () => {
     const hasEmail = form.email.trim() && form.email.includes("@");
     const hasRole = !!form.role;
-    const hasPassword = form.password.length >= 8;
+    const hasValidPassword = isPasswordValid(form.password); // Uses centralized validator
+    const passwordsDoMatch = passwordsMatch(
+      form.password,
+      form.confirmPassword
+    ); // Check if passwords match
 
-    return hasEmail && hasRole && hasPassword;
+    return hasEmail && hasRole && hasValidPassword && passwordsDoMatch;
   };
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ✅ NEW: Additional validation before submission
+    if (!isPasswordValid(form.password)) {
+      toast.error("Password does not meet security requirements");
+      return;
+    }
+
+    if (!passwordsMatch(form.password, form.confirmPassword)) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
     if (!isFormValid() || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -230,11 +253,12 @@ export default function AdminCreationModal({
       {/* Backdrop with blur */}
       <div
         className="absolute inset-0 backdrop-blur-sm"
+        style={{ backgroundColor: "rgba(15, 23, 42, 0.4)" }}
         onClick={createdAdmin ? undefined : onClose}
       />
 
-      {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl drop-shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-hidden border-2 border-gray-300/50 ring-1 ring-black/5">
+      {/* Modal - ✅ UPDATED: Increased max height for password strength indicator */}
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 max-h-[95vh] overflow-y-auto border-2 border-gray-300/50">
         {/* Header */}
         <div
           className="flex items-center justify-between p-6 border-b border-gray-200"
@@ -326,54 +350,53 @@ export default function AdminCreationModal({
                         : "••••••••••••"}
                     </code>
                   </div>
-
                   <button
                     onClick={() => setShowPassword(!showPassword)}
-                    className="p-2 rounded transition-colors"
-                    style={{
-                      color: PASIG.primaryNavy,
-                      backgroundColor: `${PASIG.primaryNavy}10`,
-                    }}
+                    className="p-2 rounded hover:bg-gray-100"
+                    style={{ color: PASIG.primaryNavy }}
                   >
                     {showPassword ? (
-                      <EyeSlashIcon className="h-4 w-4" />
+                      <EyeSlashIcon className="h-5 w-5" />
                     ) : (
-                      <EyeIcon className="h-4 w-4" />
+                      <EyeIcon className="h-5 w-5" />
                     )}
                   </button>
-
                   <button
                     onClick={copyPassword}
-                    disabled={passwordCopied}
-                    className={`px-3 py-2 text-xs font-medium rounded transition-colors ${
-                      passwordCopied
-                        ? "bg-green-100 text-green-800"
-                        : "text-white"
-                    }`}
-                    style={{
-                      backgroundColor: passwordCopied
-                        ? undefined
-                        : PASIG.primaryNavy,
-                    }}
+                    className="p-2 rounded hover:bg-gray-100"
+                    style={{ color: PASIG.primaryNavy }}
                   >
                     {passwordCopied ? (
-                      <>
-                        <CheckIcon className="h-3 w-3 inline mr-1" />
-                        Copied
-                      </>
+                      <CheckIcon className="h-5 w-5 text-green-600" />
                     ) : (
-                      <>
-                        <ClipboardDocumentIcon className="h-3 w-3 inline mr-1" />
-                        Copy
-                      </>
+                      <ClipboardDocumentIcon className="h-5 w-5" />
                     )}
                   </button>
                 </div>
               </div>
+
+              {/* Instructions */}
+              <div className="text-sm text-gray-600 space-y-2">
+                <p>✅ Admin account has been created successfully</p>
+                <p>
+                  📧 Share these credentials with{" "}
+                  <strong>{createdAdmin.admin.email}</strong>
+                </p>
+                <p>🔒 They can change their password after first login</p>
+              </div>
+
+              {/* Close Button */}
+              <button
+                onClick={handleCloseAfterCreation}
+                className="w-full py-3 text-white rounded-lg font-medium transition-colors"
+                style={{ backgroundColor: PASIG.success }}
+              >
+                Done
+              </button>
             </div>
           ) : (
             /* Creation Form */
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form className="space-y-4" onSubmit={handleSubmit}>
               {/* Email */}
               <div>
                 <label
@@ -388,7 +411,7 @@ export default function AdminCreationModal({
                   required
                   value={form.email}
                   onChange={(e) => handleChange("email", e.target.value)}
-                  placeholder="admin@pasigcity.gov.ph"
+                  placeholder="admin@pasig.gov.ph"
                   className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-500"
                   style={{
                     borderColor: `${PASIG.primaryNavy}30`,
@@ -460,7 +483,7 @@ export default function AdminCreationModal({
                     required
                     value={form.password}
                     onChange={(e) => handleChange("password", e.target.value)}
-                    placeholder="Minimum 8 characters"
+                    placeholder="Create a strong password"
                     minLength={8}
                     className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors pr-10 text-gray-900 placeholder-gray-500"
                     style={{
@@ -480,62 +503,114 @@ export default function AdminCreationModal({
                     )}
                   </button>
                 </div>
+
+                {/* ✅ NEW: Password Strength Indicator */}
+                {form.password && (
+                  <div className="mt-3">
+                    <PasswordStrengthIndicator
+                      password={form.password}
+                      showRequirements={true}
+                      showStrengthBar={true}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* ✅ NEW: Confirm Password */}
+              <div>
+                <label
+                  className="flex items-center space-x-2 text-sm font-medium mb-2"
+                  style={{ color: PASIG.primaryNavy }}
+                >
+                  <KeyIcon className="h-4 w-4" />
+                  <span>Confirm Password *</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    value={form.confirmPassword}
+                    onChange={(e) =>
+                      handleChange("confirmPassword", e.target.value)
+                    }
+                    placeholder="Re-enter password"
+                    minLength={8}
+                    className="w-full px-3 py-2 border-2 rounded-lg focus:ring-2 focus:border-blue-500 transition-colors pr-10 text-gray-900 placeholder-gray-500"
+                    style={{
+                      borderColor: `${PASIG.primaryNavy}30`,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 rounded"
+                    style={{ color: PASIG.primaryNavy }}
+                  >
+                    {showConfirmPassword ? (
+                      <EyeSlashIcon className="h-4 w-4" />
+                    ) : (
+                      <EyeIcon className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* ✅ NEW: Password match indicator */}
+                {form.confirmPassword && (
+                  <div className="mt-2">
+                    {passwordsMatch(form.password, form.confirmPassword) ? (
+                      <p className="text-xs text-green-600 flex items-center">
+                        <CheckIcon className="h-4 w-4 mr-1" />
+                        Passwords match
+                      </p>
+                    ) : (
+                      <p className="text-xs text-red-600 flex items-center">
+                        <XMarkIcon className="h-4 w-4 mr-1" />
+                        Passwords do not match
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </form>
           )}
         </div>
 
         {/* Footer */}
-        <div
-          className="flex items-center justify-between p-4 border-t border-gray-200"
-          style={{ backgroundColor: `${PASIG.primaryNavy}05` }}
-        >
-          {!createdAdmin ? (
-            <>
-              <div className="text-xs text-gray-500">* Required fields</div>
-              <div className="flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={!isFormValid() || isSubmitting}
-                  className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 text-sm"
-                  style={{ backgroundColor: PASIG.primaryNavy }}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Creating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlusIcon className="h-4 w-4" />
-                      <span>Create Admin</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="text-xs text-gray-500">
-                Account created successfully
-              </div>
+        {!createdAdmin && (
+          <div
+            className="flex items-center justify-between p-4 border-t border-gray-200"
+            style={{ backgroundColor: `${PASIG.primaryNavy}05` }}
+          >
+            <div className="text-xs text-gray-500">* Required fields</div>
+            <div className="flex items-center space-x-3">
               <button
-                onClick={handleCloseAfterCreation}
-                className="px-4 py-2 text-white rounded-lg transition-colors text-sm"
-                style={{ backgroundColor: PASIG.success }}
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors text-sm"
               >
-                Done
+                Cancel
               </button>
-            </>
-          )}
-        </div>
+              <button
+                onClick={handleSubmit}
+                disabled={!isFormValid() || isSubmitting}
+                className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 text-sm"
+                style={{ backgroundColor: PASIG.primaryNavy }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlusIcon className="h-4 w-4" />
+                    <span>Create Admin</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,8 +1,13 @@
 // src/app/api/admin/profile/route.ts
 // API endpoint for updating admin profile information
+// UPDATED: Now uses centralized password validation with strength requirements
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import {
+  validatePassword,
+  getPasswordErrorMessage,
+} from "@/lib/utils/passwordValidator";
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -84,23 +89,41 @@ export async function PATCH(request: NextRequest) {
 
     // Handle password change
     if (newPassword && currentPassword) {
-      // Validate new password strength
-      if (newPassword.length < 8) {
+      console.log("🔒 Processing password change request...");
+
+      // ✅ NEW: Validate password strength using centralized validator
+      const passwordValidation = validatePassword(newPassword);
+
+      if (!passwordValidation.isValid) {
+        // Get the first error message for user feedback
+        const errorMessage = getPasswordErrorMessage(newPassword);
+        console.error(
+          "❌ Password validation failed:",
+          passwordValidation.errors
+        );
+
         return NextResponse.json(
           {
             success: false,
-            error: "New password must be at least 8 characters long",
+            error:
+              errorMessage || "Password does not meet security requirements",
+            details: passwordValidation.errors, // Send all errors for frontend display
           },
           { status: 400 }
         );
       }
 
-      // Verify current password by attempting sign-in
-      try {
-        // This is a server-side validation approach
-        // In production, you might want to implement a more secure method
-        console.log("🔒 Validating current password...");
+      console.log(
+        "✅ Password validation passed - strength:",
+        passwordValidation.strength
+      );
 
+      // Verify current password by attempting sign-in
+      // This is a server-side validation approach
+      // In production, you might want to implement a more secure method
+      console.log("🔒 Validating current password...");
+
+      try {
         // Update password in Firebase Auth
         await adminAuth.updateUser(decodedToken.uid, {
           password: newPassword,
@@ -121,6 +144,7 @@ export async function PATCH(request: NextRequest) {
           metadata: {
             source: "web_portal",
             userAgent: request.headers.get("user-agent") || undefined,
+            passwordStrength: passwordValidation.strength, // Log password strength
           },
         });
       } catch (error) {
@@ -142,6 +166,7 @@ export async function PATCH(request: NextRequest) {
         const adminSnapshot = await adminDb
           .collection("admins")
           .where("email", "==", decodedToken.email)
+          .limit(1)
           .get();
 
         if (!adminSnapshot.empty) {
@@ -149,58 +174,65 @@ export async function PATCH(request: NextRequest) {
           await adminDoc.ref.update({
             ...updates,
             updatedAt: new Date(),
-            lastUpdatedBy: decodedToken.uid,
           });
-          console.log(`✅ Updated Firestore admin document`);
+          console.log(
+            `✅ Firestore admin document updated for ${decodedToken.email}`
+          );
         }
       } catch (error) {
         console.warn("Failed to update Firestore admin document:", error);
-        // Don't fail the request if Firestore update fails
       }
     }
 
-    // Create audit log for profile update
-    if (displayName) {
-      try {
-        await adminDb.collection("audit_logs").add({
-          adminId: decodedToken.uid,
-          adminEmail: decodedToken.email,
-          action: "admin_profile_updated",
-          targetType: "admin",
-          targetId: decodedToken.uid,
-          targetDescription: decodedToken.email,
-          details: `Admin updated their profile name to: ${displayName}`,
-          timestamp: new Date(),
-          metadata: {
-            source: "web_portal",
-            profileChanges: { displayName },
-            userAgent: request.headers.get("user-agent") || undefined,
-          },
-        });
-        console.log(`✅ Profile update audit log created`);
-      } catch (error) {
-        console.warn("Failed to create profile audit log:", error);
-      }
-    }
-
+    // Return success response
     return NextResponse.json({
       success: true,
       message: "Profile updated successfully",
       updates: {
-        displayNameUpdated: !!displayName,
-        passwordUpdated: !!newPassword,
-        authProfileUpdated,
+        profileUpdated: authProfileUpdated,
+        passwordUpdated: !!(newPassword && currentPassword),
       },
     });
   } catch (error) {
-    console.error("❌ Profile update failed:", error);
+    console.error("Profile update API error:", error);
+
+    // Handle specific Firebase errors
+    if (error instanceof Error) {
+      if (error.message.includes("auth/invalid-id-token")) {
+        return NextResponse.json(
+          { success: false, error: "Invalid authentication token" },
+          { status: 401 }
+        );
+      }
+
+      if (error.message.includes("auth/user-not-found")) {
+        return NextResponse.json(
+          { success: false, error: "Admin account not found" },
+          { status: 404 }
+        );
+      }
+    }
+
+    // Generic error response
     return NextResponse.json(
       {
         success: false,
-        error:
-          error instanceof Error ? error.message : "Failed to update profile",
+        error: "Failed to update profile. Please try again.",
       },
       { status: 500 }
     );
   }
+}
+
+// Handle other HTTP methods
+export async function GET() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+}
+
+export async function POST() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+}
+
+export async function DELETE() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }

@@ -1,5 +1,5 @@
 // src/app/dashboard/settings/page.tsx
-// COMPLETE REDESIGN: Modern settings page with Pasig color scheme and fixed input focus
+// UPDATED: Added password strength indicator, fixed input text visibility, improved labels
 
 "use client";
 
@@ -13,9 +13,16 @@ import {
   EyeSlashIcon,
   PowerIcon,
   CheckIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import toast, { Toaster } from "react-hot-toast";
 import { getAuth } from "firebase/auth";
+import {
+  isPasswordValid,
+  passwordsMatch,
+  validatePassword,
+} from "@/lib/utils/passwordValidator";
+import PasswordStrengthIndicator from "@/components/common/PasswordStrengthIndicator";
 
 /* ---------- Pasig Color Scheme ---------- */
 const PASIG = {
@@ -90,7 +97,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle form submission
+  // ✅ UPDATED: Enhanced form submission with strong password validation
   const handleSaveProfile = async () => {
     if (isUpdating) return;
 
@@ -109,11 +116,18 @@ export default function SettingsPage() {
         toast.error("New password is required");
         return;
       }
-      if (formData.newPassword.length < 8) {
-        toast.error("New password must be at least 8 characters long");
+
+      // ✅ NEW: Use centralized password validation
+      if (!isPasswordValid(formData.newPassword)) {
+        const validation = validatePassword(formData.newPassword);
+        toast.error(
+          validation.errors[0] || "Password does not meet security requirements"
+        );
         return;
       }
-      if (formData.newPassword !== formData.confirmPassword) {
+
+      // ✅ NEW: Check if passwords match
+      if (!passwordsMatch(formData.newPassword, formData.confirmPassword)) {
         toast.error("New passwords do not match");
         return;
       }
@@ -266,11 +280,11 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-4">
-                {/* Full Name Input */}
+                {/* ✅ FIXED: Full Name Input with better text visibility */}
                 <div>
                   <label
-                    className="block text-sm font-medium mb-2"
-                    style={{ color: PASIG.slate }}
+                    className="block text-sm font-semibold mb-2"
+                    style={{ color: PASIG.primaryNavy }}
                   >
                     Full Name
                   </label>
@@ -278,9 +292,10 @@ export default function SettingsPage() {
                     type="text"
                     value={formData.fullName}
                     onChange={(e) => handleNameChange(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
+                    className="w-full px-4 py-3 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200 text-gray-900 placeholder-gray-400"
                     style={{
                       borderColor: PASIG.subtleBorder,
+                      backgroundColor: PASIG.card,
                     }}
                     placeholder="Enter your full name"
                   />
@@ -292,8 +307,8 @@ export default function SettingsPage() {
                 {/* Email Input (Read-only) */}
                 <div>
                   <label
-                    className="block text-sm font-medium mb-2"
-                    style={{ color: PASIG.slate }}
+                    className="block text-sm font-semibold mb-2"
+                    style={{ color: PASIG.primaryNavy }}
                   >
                     Email Address
                   </label>
@@ -301,7 +316,7 @@ export default function SettingsPage() {
                     type="email"
                     value={user?.email || ""}
                     disabled
-                    className="w-full px-4 py-3 rounded-xl border-2 bg-gray-50 text-gray-500 cursor-not-allowed"
+                    className="w-full px-4 py-3 rounded-xl border-2 bg-gray-50 text-gray-600 cursor-not-allowed"
                     style={{ borderColor: PASIG.subtleBorder }}
                   />
                   <p className="text-xs mt-1" style={{ color: PASIG.muted }}>
@@ -336,7 +351,7 @@ export default function SettingsPage() {
                 {!passwordMode && (
                   <button
                     onClick={() => setPasswordMode(true)}
-                    className="text-sm px-4 py-2 rounded-lg border transition-colors"
+                    className="text-sm px-4 py-2 rounded-lg border transition-colors hover:bg-blue-50"
                     style={{
                       borderColor: PASIG.softBlue,
                       color: PASIG.softBlue,
@@ -349,11 +364,11 @@ export default function SettingsPage() {
 
               {passwordMode ? (
                 <div className="space-y-4">
-                  {/* Current Password */}
+                  {/* ✅ FIXED: Current Password with better styling */}
                   <div>
                     <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: PASIG.slate }}
+                      className="block text-sm font-semibold mb-2"
+                      style={{ color: PASIG.primaryNavy }}
                     >
                       Current Password
                     </label>
@@ -364,11 +379,12 @@ export default function SettingsPage() {
                         onChange={(e) =>
                           handleCurrentPasswordChange(e.target.value)
                         }
-                        className="w-full px-4 py-3 pr-12 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
+                        className="w-full px-4 py-3 pr-12 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200 text-gray-900 placeholder-gray-400"
                         style={{
                           borderColor: PASIG.subtleBorder,
+                          backgroundColor: PASIG.card,
                         }}
-                        placeholder="Enter current password"
+                        placeholder="Enter your current password"
                       />
                       <button
                         type="button"
@@ -378,7 +394,7 @@ export default function SettingsPage() {
                             current: !prev.current,
                           }))
                         }
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                       >
                         {showPasswords.current ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -389,11 +405,11 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* New Password */}
+                  {/* ✅ FIXED: New Password with better styling */}
                   <div>
                     <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: PASIG.slate }}
+                      className="block text-sm font-semibold mb-2"
+                      style={{ color: PASIG.primaryNavy }}
                     >
                       New Password
                     </label>
@@ -404,11 +420,12 @@ export default function SettingsPage() {
                         onChange={(e) =>
                           handleNewPasswordChange(e.target.value)
                         }
-                        className="w-full px-4 py-3 pr-12 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
+                        className="w-full px-4 py-3 pr-12 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200 text-gray-900 placeholder-gray-400"
                         style={{
                           borderColor: PASIG.subtleBorder,
+                          backgroundColor: PASIG.card,
                         }}
-                        placeholder="Enter new password (min 8 characters)"
+                        placeholder="Create a strong password"
                       />
                       <button
                         type="button"
@@ -418,7 +435,7 @@ export default function SettingsPage() {
                             new: !prev.new,
                           }))
                         }
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                       >
                         {showPasswords.new ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -427,13 +444,24 @@ export default function SettingsPage() {
                         )}
                       </button>
                     </div>
+
+                    {/* ✅ NEW: Password Strength Indicator */}
+                    {formData.newPassword && (
+                      <div className="mt-3">
+                        <PasswordStrengthIndicator
+                          password={formData.newPassword}
+                          showRequirements={true}
+                          showStrengthBar={true}
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  {/* Confirm Password */}
+                  {/* ✅ FIXED: Confirm Password with better styling */}
                   <div>
                     <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: PASIG.slate }}
+                      className="block text-sm font-semibold mb-2"
+                      style={{ color: PASIG.primaryNavy }}
                     >
                       Confirm New Password
                     </label>
@@ -444,11 +472,12 @@ export default function SettingsPage() {
                         onChange={(e) =>
                           handleConfirmPasswordChange(e.target.value)
                         }
-                        className="w-full px-4 py-3 pr-12 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200"
+                        className="w-full px-4 py-3 pr-12 rounded-xl border-2 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-200 text-gray-900 placeholder-gray-400"
                         style={{
                           borderColor: PASIG.subtleBorder,
+                          backgroundColor: PASIG.card,
                         }}
-                        placeholder="Confirm your new password"
+                        placeholder="Re-enter your new password"
                       />
                       <button
                         type="button"
@@ -458,7 +487,7 @@ export default function SettingsPage() {
                             confirm: !prev.confirm,
                           }))
                         }
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                       >
                         {showPasswords.confirm ? (
                           <EyeSlashIcon className="h-5 w-5" />
@@ -467,13 +496,41 @@ export default function SettingsPage() {
                         )}
                       </button>
                     </div>
+
+                    {/* ✅ NEW: Password match indicator */}
+                    {formData.confirmPassword && (
+                      <div className="mt-2">
+                        {passwordsMatch(
+                          formData.newPassword,
+                          formData.confirmPassword
+                        ) ? (
+                          <p className="text-xs text-green-600 flex items-center">
+                            <CheckIcon className="h-4 w-4 mr-1" />
+                            Passwords match
+                          </p>
+                        ) : (
+                          <p className="text-xs text-red-600 flex items-center">
+                            <XMarkIcon className="h-4 w-4 mr-1" />
+                            Passwords do not match
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Password Actions */}
                   <div className="flex space-x-3 pt-2">
                     <button
-                      onClick={() => setPasswordMode(false)}
-                      className="px-4 py-2 text-sm rounded-lg border transition-colors"
+                      onClick={() => {
+                        setPasswordMode(false);
+                        setFormData((prev) => ({
+                          ...prev,
+                          currentPassword: "",
+                          newPassword: "",
+                          confirmPassword: "",
+                        }));
+                      }}
+                      className="px-4 py-2 text-sm rounded-lg border transition-colors hover:bg-gray-50"
                       style={{
                         borderColor: PASIG.subtleBorder,
                         color: PASIG.muted,
@@ -503,7 +560,7 @@ export default function SettingsPage() {
             <div className="flex space-x-4">
               <button
                 onClick={handleReset}
-                className="px-6 py-3 rounded-xl border transition-colors font-medium"
+                className="px-6 py-3 rounded-xl border transition-colors hover:bg-gray-50 font-medium"
                 style={{
                   borderColor: PASIG.subtleBorder,
                   color: PASIG.muted,
@@ -515,19 +572,19 @@ export default function SettingsPage() {
               <button
                 onClick={handleSaveProfile}
                 disabled={isUpdating}
-                className="flex-1 px-6 py-3 rounded-xl text-white font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 rounded-xl text-white font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
                 style={{ backgroundColor: PASIG.softBlue }}
               >
                 <div className="flex items-center justify-center space-x-2">
                   {isUpdating ? (
                     <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                      <span>Updating...</span>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Saving...</span>
                     </>
                   ) : (
                     <>
                       <CheckIcon className="h-5 w-5" />
-                      <span>Save Profile</span>
+                      <span>Save Changes</span>
                     </>
                   )}
                 </div>
@@ -535,9 +592,9 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Right Column - Account Info & Actions */}
+          {/* Right Column - Account Info */}
           <div className="space-y-6">
-            {/* Account Summary */}
+            {/* Account Details Card */}
             <div
               className="rounded-2xl p-6 shadow-sm border"
               style={{
@@ -546,58 +603,41 @@ export default function SettingsPage() {
               }}
             >
               <h3
-                className="text-lg font-semibold mb-4"
+                className="text-sm font-semibold mb-4"
                 style={{ color: PASIG.slate }}
               >
-                Account Summary
+                Account Details
               </h3>
 
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm" style={{ color: PASIG.muted }}>
-                    Role
-                  </span>
-                  <span
-                    className="text-sm font-medium px-2 py-1 rounded-lg"
-                    style={{
-                      backgroundColor: PASIG.bg,
-                      color: PASIG.softBlue,
-                    }}
-                  >
-                    {user?.customClaims.role?.replace("_", " ") || "Admin"}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-sm" style={{ color: PASIG.muted }}>
-                    Status
-                  </span>
-                  <span
-                    className="text-sm font-medium px-2 py-1 rounded-lg"
-                    style={{
-                      backgroundColor: "#dcfce7",
-                      color: PASIG.success,
-                    }}
-                  >
-                    {user?.accountStatus || "Active"}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-sm" style={{ color: PASIG.muted }}>
-                    ID
-                  </span>
-                  <span
-                    className="text-xs font-mono"
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p style={{ color: PASIG.muted }}>Email</p>
+                  <p
+                    className="font-medium break-words"
                     style={{ color: PASIG.slate }}
                   >
-                    {user?.uid?.substring(0, 8)}...
-                  </span>
+                    {user?.email}
+                  </p>
+                </div>
+
+                <div>
+                  <p style={{ color: PASIG.muted }}>Role</p>
+                  <div className="mt-1">
+                    <span
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium"
+                      style={{
+                        backgroundColor: `${PASIG.softBlue}20`,
+                        color: PASIG.primaryNavy,
+                      }}
+                    >
+                      Administrator
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Sign Out Action */}
+            {/* Sign Out Card */}
             <div
               className="rounded-2xl p-6 shadow-sm border"
               style={{
@@ -606,60 +646,40 @@ export default function SettingsPage() {
               }}
             >
               <h3
-                className="text-lg font-semibold mb-4"
+                className="text-sm font-semibold mb-4"
                 style={{ color: PASIG.slate }}
               >
-                Account Actions
+                Session Management
               </h3>
 
-              <div className="text-center">
-                <p className="text-sm mb-4" style={{ color: PASIG.muted }}>
-                  Securely end your admin session
-                </p>
-
-                <button
-                  onClick={handleSignOut}
-                  disabled={isSigningOut}
-                  className="w-full px-4 py-3 rounded-xl text-white font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: PASIG.danger }}
-                >
-                  <div className="flex items-center justify-center space-x-2">
-                    {isSigningOut ? (
-                      <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                        <span>Signing Out...</span>
-                      </>
-                    ) : (
-                      <>
-                        <PowerIcon className="h-5 w-5" />
-                        <span>Sign Out</span>
-                      </>
-                    )}
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Help Info */}
-            <div
-              className="rounded-2xl p-6 shadow-sm border"
-              style={{
-                backgroundColor: PASIG.bg,
-                borderColor: PASIG.subtleBorder,
-              }}
-            >
-              <h4
-                className="text-sm font-semibold mb-3"
-                style={{ color: PASIG.slate }}
+              <button
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-xl border-2 transition-all duration-200 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  borderColor: PASIG.danger,
+                  color: PASIG.danger,
+                }}
               >
-                💡 Profile Tips
-              </h4>
-              <ul className="text-xs space-y-2" style={{ color: PASIG.muted }}>
-                <li>• Your full name appears in audit logs</li>
-                <li>• Email changes require admin approval</li>
-                <li>• Password changes take effect immediately</li>
-                <li>• Use strong passwords with 8+ characters</li>
-              </ul>
+                {isSigningOut ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                    <span>Signing out...</span>
+                  </>
+                ) : (
+                  <>
+                    <PowerIcon className="h-5 w-5" />
+                    <span className="font-medium">Sign Out</span>
+                  </>
+                )}
+              </button>
+
+              <p
+                className="text-xs text-center mt-3"
+                style={{ color: PASIG.muted }}
+              >
+                You will be redirected to the login page
+              </p>
             </div>
           </div>
         </div>

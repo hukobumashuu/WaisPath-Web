@@ -1,9 +1,14 @@
 // src/app/api/admin/change-password/[id]/route.ts
 // API endpoint for changing another admin's password (super admin only)
+// UPDATED: Now enforces strong password requirements (8+ chars, uppercase, number, special char)
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { auditLogger } from "@/lib/services/auditLogger";
+import {
+  validatePassword,
+  getPasswordErrorMessage,
+} from "@/lib/utils/passwordValidator";
 
 export async function PATCH(
   request: NextRequest,
@@ -12,6 +17,7 @@ export async function PATCH(
   try {
     // Await params for Next.js dynamic routes
     const { id: targetAdminId } = await params;
+
     // Get authorization header
     const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -55,16 +61,48 @@ export async function PATCH(
       requestedBy: decodedToken.email,
     });
 
-    // Validate new password strength
-    if (!newPassword || newPassword.length < 6) {
+    // ✅ UPDATED: Validate new password strength using centralized validator
+    if (!newPassword) {
       return NextResponse.json(
         {
           success: false,
-          error: "New password must be at least 6 characters long",
+          error: "New password is required",
         },
         { status: 400 }
       );
     }
+
+    const passwordValidation = validatePassword(newPassword);
+
+    if (!passwordValidation.isValid) {
+      // Get user-friendly error message
+      const errorMessage = getPasswordErrorMessage(newPassword);
+      console.error(
+        "❌ Password validation failed:",
+        passwordValidation.errors
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: errorMessage || "Password does not meet security requirements",
+          details: passwordValidation.errors, // Send all validation errors
+          requirements: [
+            "At least 8 characters long",
+            "At least one uppercase letter (A-Z)",
+            "At least one lowercase letter (a-z)",
+            "At least one number (0-9)",
+            "At least one special character (!@#$%^&*_+)",
+          ],
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(
+      "✅ Password validation passed - strength:",
+      passwordValidation.strength
+    );
 
     const adminDb = getAdminDb();
 
@@ -73,6 +111,7 @@ export async function PATCH(
       .collection("admins")
       .doc(targetAdminId)
       .get();
+
     if (!targetAdminDoc.exists) {
       return NextResponse.json(
         { success: false, error: "Admin not found" },
@@ -146,6 +185,7 @@ export async function PATCH(
         userAgent: request.headers.get("user-agent") || undefined,
         passwordChangeType: "admin_reset",
         firestoreAdminId: targetAdminId,
+        passwordStrength: passwordValidation.strength, // Log password strength for audit
       },
     });
 
@@ -156,6 +196,7 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       message: "Password changed successfully",
+      passwordStrength: passwordValidation.strength, // Inform admin of password strength
     });
   } catch (error) {
     console.error("Admin password change API error:", error);
