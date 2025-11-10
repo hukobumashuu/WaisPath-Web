@@ -1,4 +1,5 @@
 // src/lib/priority/PriorityCalculator.ts
+// UPDATED: Support for new 6 obstacle types (vendor_blocking, parked_vehicles, construction, broken_infrastructure, debris, other)
 // Separated priority calculation logic for better maintainability
 
 import {
@@ -77,7 +78,14 @@ export class PriorityCalculator {
     };
   }
 
-  // tightened typing to ObstacleSeverity for clarity
+  // ============================================
+  // SCORING METHODS (UNCHANGED LOGIC)
+  // ============================================
+
+  /**
+   * Get severity points based on obstacle severity level
+   * Max: 40 points
+   */
   private getSeverityPoints(severity: ObstacleSeverity): number {
     const severityMap: Record<ObstacleSeverity, number> = {
       low: 10,
@@ -90,6 +98,10 @@ export class PriorityCalculator {
     return points;
   }
 
+  /**
+   * Get community validation points based on upvotes/downvotes
+   * Max: 30 points
+   */
   private getCommunityPoints(upvotes: number, downvotes: number): number {
     const netVotes = (upvotes || 0) - (downvotes || 0);
     const points = Math.max(0, Math.min(30, netVotes * 5));
@@ -99,17 +111,38 @@ export class PriorityCalculator {
     return points;
   }
 
+  /**
+   * Get critical type points based on obstacle type
+   * Max: 20 points
+   *
+   * UPDATED: New 6-type classification based on Philippine accessibility context
+   */
   private getCriticalPoints(type: ObstacleType): number {
-    const criticalTypes: ObstacleType[] = [
-      "no_sidewalk",
-      "stairs_no_ramp",
-      "flooding",
-    ];
-    const points = criticalTypes.includes(type) ? 20 : 0;
+    const criticalTypes: Partial<Record<ObstacleType, number>> = {
+      // Tier 1: Critical Infrastructure Barriers (20 points)
+      construction: 20,
+      broken_infrastructure: 20,
+
+      // Tier 2: Significant Accessibility Barriers (10 points)
+      parked_vehicles: 10,
+
+      // Tier 3: Moderate Barriers (5 points)
+      vendor_blocking: 5,
+      debris: 5,
+
+      // Tier 4: General Obstacles (0 points)
+      other: 0,
+    };
+
+    const points = criticalTypes[type] ?? 0;
     console.log(`Critical points for ${type}: ${points}`);
     return points;
   }
 
+  /**
+   * Get admin verification points based on obstacle status
+   * Max: 10 points (verified), Min: -50 points (false report)
+   */
   private getAdminPoints(status: ObstacleStatus): number {
     const statusPoints: Record<ObstacleStatus, number> = {
       pending: 0,
@@ -122,6 +155,9 @@ export class PriorityCalculator {
     return points;
   }
 
+  /**
+   * Convert score to priority category
+   */
   private getCategory(score: number): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
     if (score >= 80) return "CRITICAL";
     if (score >= 60) return "HIGH";
@@ -129,55 +165,79 @@ export class PriorityCalculator {
     return "LOW";
   }
 
+  // ============================================
+  // RECOMMENDATION METHODS (UPDATED FOR NEW TYPES)
+  // ============================================
+
+  /**
+   * Get specific recommendation for each obstacle type
+   * UPDATED: New recommendations for 6 obstacle types
+   */
   private getRecommendation(type: ObstacleType): string {
-    // Use Record<ObstacleType, string> so every ObstacleType is covered at compile time
-    const recommendations: Record<ObstacleType, string> = {
+    // FIXED: Using Partial<Record> to handle only the 6 active types
+    const recommendations: Partial<Record<ObstacleType, string>> = {
+      construction:
+        "Require accessible temporary pathways during construction; enforce contractor compliance with accessibility standards; coordinate with DPWH for proper detour signage",
+
+      broken_infrastructure:
+        "Immediate repair of damaged ramps, sidewalks, and accessibility features; conduct structural assessment; ensure compliance with Philippine Building Code (BP 344) accessibility requirements",
+
+      parked_vehicles:
+        "Implement strict parking enforcement with fines; install physical barriers (bollards) to prevent vehicle access on sidewalks; deploy regular traffic enforcement patrols; public education campaign on sidewalk protection",
+
       vendor_blocking:
-        "Coordinate with local authorities for vendor management",
-      parked_vehicles: "Implement parking enforcement and signage",
-      construction: "Require accessible temporary pathways during construction",
-      electrical_post: "Relocate or mark pole with tactile indicators",
-      // removed tree_roots (no longer in types) — replaced by generic guidance
-      no_sidewalk: "Construct accessible sidewalk with proper curb cuts",
-      flooding: "Improve drainage and install accessible walkways",
-      stairs_no_ramp: "Install compliant accessibility ramp",
-      narrow_passage: "Widen pathway to minimum accessible width",
-      // replaced broken_pavement -> broken_infrastructure guidance
-      broken_infrastructure: "Repair broken infrastructure for smooth surfaces",
-      steep_slope: "Install ramp or alternative accessible route",
+        "Establish clearly marked vendor-free walkways with designated vendor zones; community engagement and consultation with vendor associations; provide alternative vending areas; enforcement with compassion and economic support programs",
+
+      debris:
+        "Schedule regular street cleaning and maintenance; install additional waste bins at strategic locations; implement community cleanup programs; enforce anti-littering ordinances; improve waste collection schedules",
+
       other:
-        "Assess specific accessibility barriers and implement appropriate solution",
-      // newly added 'debris' handling
-      debris: "Clear debris and install regular street cleaning schedules",
+        "Conduct detailed on-site assessment to identify specific barrier type; consult with PWD community for impact evaluation; implement appropriate accessibility solution based on findings; document for future classification",
     };
 
-    return recommendations[type];
+    // Return the recommendation or a default message
+    return (
+      recommendations[type] ??
+      "Assess specific accessibility barriers and implement appropriate solution"
+    );
   }
 
+  /**
+   * Get implementation category based on complexity and resources required
+   * UPDATED: New categorization for 6 obstacle types
+   */
   private getImplementationCategory(
     type: ObstacleType
   ): "Quick Fix" | "Medium Project" | "Major Infrastructure" {
-    const quickFix: ObstacleType[] = ["vendor_blocking", "parked_vehicles"];
+    const quickFix: ObstacleType[] = ["vendor_blocking", "debris"];
     const majorInfra: ObstacleType[] = [
-      "no_sidewalk",
       "construction",
-      "flooding",
+      "broken_infrastructure",
     ];
+
     if (quickFix.includes(type)) return "Quick Fix";
     if (majorInfra.includes(type)) return "Major Infrastructure";
     return "Medium Project";
   }
 
+  /**
+   * Get implementation timeframe based on category
+   * FIXED: Proper typing for timeframes object
+   */
   private getTimeframe(type: ObstacleType): string {
     const category = this.getImplementationCategory(type);
-    const timeframes: Record<
-      "Quick Fix" | "Medium Project" | "Major Infrastructure",
-      string
-    > = {
-      "Quick Fix": "1-30 days (enforcement/management)",
-      "Medium Project": "1-6 months (repairs/modifications)",
-      "Major Infrastructure": "6+ months (construction/major work)",
+
+    // FIXED: Explicit type annotation
+    const timeframes: {
+      "Quick Fix": string;
+      "Medium Project": string;
+      "Major Infrastructure": string;
+    } = {
+      "Quick Fix": "1-30 days (enforcement and management actions)",
+      "Medium Project": "1-6 months (enforcement with physical interventions)",
+      "Major Infrastructure": "6+ months (construction and major repair work)",
     };
+
     return timeframes[category];
   }
 }
