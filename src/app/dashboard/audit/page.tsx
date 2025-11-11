@@ -246,6 +246,14 @@ export default function AuditLogsPage() {
       if (filters.action) {
         params.append("action", filters.action);
       }
+
+      if (filters.targetType) {
+        params.append("targetType", filters.targetType);
+      }
+
+      if (filters.source) {
+        params.append("source", filters.source);
+      }
       // REMOVED: targetType and source filters (not in UI anymore)
       if (filters.startDate) {
         params.append("startDate", filters.startDate);
