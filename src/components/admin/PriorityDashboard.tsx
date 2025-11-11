@@ -1,5 +1,5 @@
 // src/components/admin/PriorityDashboard.tsx
-// Updated to include the ObstacleDetailModal
+// UPDATED: Added new StatusFilter, kept PriorityFilterTabs, and implemented pagination
 
 "use client";
 
@@ -12,11 +12,22 @@ import {
   PriorityObstacle,
 } from "@/lib/priority/PriorityCalculator";
 import { LifecycleManager } from "@/lib/lifecycle/LifecycleManager";
-import PriorityStatsCards, { DashboardStats } from "./PriorityStatsCards";
-import PriorityFilterTabs from "./PriorityFilterTabs";
+import PriorityFilterTabs from "./PriorityFilterTabs"; // KEEPING this as requested
 import PriorityObstacleCard from "./PriorityObstacleCard";
 import ObstacleDetailModal from "./ObstacleDetailModal";
 import { getAuth } from "firebase/auth";
+// NEW: Import new filter component and types
+// NEW: Import pagination icons
+import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import PriorityStatsBar from "./PriorityStatsBar";
+import { DashboardStats } from "./PriorityStatsCards";
+
+type StatusFilterType =
+  | "all"
+  | "pending"
+  | "verified"
+  | "resolved"
+  | "false_report";
 
 // Define proper types for audit logging
 interface ObstacleData {
@@ -38,10 +49,19 @@ interface StatusChange {
   notes: string;
 }
 
+// NEW: Pagination constants
+const ITEMS_PER_PAGE = 10;
+
 export default function PriorityDashboard() {
   const { user } = useAdminAuth();
-  const [activeFilter, setActiveFilter] = useState<string>("all");
   const [priorityCalculator] = useState(() => new PriorityCalculator());
+
+  // UPDATED: Dual filter state
+  const [priorityFilter, setPriorityFilter] = useState<string>("all"); // Controlled by old tabs
+  const [statusFilter, setStatusFilter] = useState<StatusFilterType>("all"); // Controlled by new dropdown
+
+  // NEW: Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Modal state
   const [selectedObstacle, setSelectedObstacle] =
@@ -172,13 +192,26 @@ export default function PriorityDashboard() {
   // Calculate stats with logging
   const stats = useMemo(() => {
     const total = prioritizedObstacles.length;
+    // Get status counts from the full list
+    const pending = prioritizedObstacles.filter(
+      (o) => o.status === "pending"
+    ).length;
+    const verified = prioritizedObstacles.filter(
+      (o) => o.status === "verified"
+    ).length;
     const resolved = prioritizedObstacles.filter(
       (o) => o.status === "resolved"
     ).length;
+    const false_report = prioritizedObstacles.filter(
+      (o) => o.status === "false_report"
+    ).length;
+
+    // Get priority counts
+    const critical = prioritizedObstacles.filter(
+      (o) => o.priorityResult.category === "CRITICAL"
+    ).length;
     const high = prioritizedObstacles.filter(
-      (o) =>
-        o.priorityResult.category === "HIGH" ||
-        o.priorityResult.category === "CRITICAL"
+      (o) => o.priorityResult.category === "HIGH"
     ).length;
     const medium = prioritizedObstacles.filter(
       (o) => o.priorityResult.category === "MEDIUM"
@@ -186,7 +219,8 @@ export default function PriorityDashboard() {
     const low = prioritizedObstacles.filter(
       (o) => o.priorityResult.category === "LOW"
     ).length;
-    const urgentCount = high;
+
+    const urgentCount = critical + high; // Use Critical + High for urgent
     const totalScore = prioritizedObstacles.reduce(
       (sum, o) => sum + o.priorityResult.score,
       0
@@ -201,6 +235,10 @@ export default function PriorityDashboard() {
       low,
       urgentCount,
       avgScore,
+      // NEW: Pass status counts
+      pending,
+      verified,
+      false_report,
     };
 
     console.log(`📈 Dashboard stats calculated:`, calculatedStats);
@@ -208,37 +246,62 @@ export default function PriorityDashboard() {
     return calculatedStats;
   }, [prioritizedObstacles]);
 
-  // Filter logic with logging
+  // UPDATED: Filter logic with logging for BOTH filters
   const filteredObstacles = useMemo(() => {
-    console.log(`🔍 Applying filter: ${activeFilter}`);
+    console.log(
+      `🔍 Applying filters: Status=${statusFilter}, Priority=${priorityFilter}`
+    );
 
-    let filtered: PriorityObstacle[];
+    let filtered: PriorityObstacle[] = prioritizedObstacles;
 
-    if (activeFilter === "all") {
-      filtered = prioritizedObstacles;
-    } else if (activeFilter === "resolved") {
-      filtered = prioritizedObstacles.filter(
-        (obstacle) => obstacle.status === "resolved"
+    // 1. Filter by Status (NEW)
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(
+        (obstacle) => obstacle.status === statusFilter
       );
-    } else if (activeFilter === "high") {
-      filtered = prioritizedObstacles.filter(
+    }
+
+    // 2. Filter by Priority (Original logic)
+    if (priorityFilter === "all") {
+      // No priority filter
+    } else if (priorityFilter === "resolved") {
+      // This is a status, but we keep it for the old tab
+      filtered = filtered.filter((obstacle) => obstacle.status === "resolved");
+    } else if (priorityFilter === "high") {
+      // High combines CRITICAL and HIGH
+      filtered = filtered.filter(
         (obstacle) =>
           obstacle.priorityResult.category === "HIGH" ||
           obstacle.priorityResult.category === "CRITICAL"
       );
     } else {
-      filtered = prioritizedObstacles.filter(
+      // Medium or Low
+      filtered = filtered.filter(
         (obstacle) =>
-          obstacle.priorityResult.category.toLowerCase() === activeFilter
+          obstacle.priorityResult.category.toLowerCase() === priorityFilter
       );
     }
 
     console.log(
-      `🎯 Filter applied: ${activeFilter}, showing ${filtered.length}/${prioritizedObstacles.length} obstacles`
+      `🎯 Filters applied: Showing ${filtered.length}/${prioritizedObstacles.length} obstacles`
     );
 
     return filtered;
-  }, [prioritizedObstacles, activeFilter]);
+  }, [prioritizedObstacles, statusFilter, priorityFilter]);
+
+  // NEW: Paginated obstacles logic
+  const paginatedObstacles = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return filteredObstacles.slice(startIndex, endIndex);
+  }, [filteredObstacles, currentPage]);
+
+  const totalPages = Math.ceil(filteredObstacles.length / ITEMS_PER_PAGE);
+
+  // NEW: Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [priorityFilter, statusFilter]);
 
   // ENHANCED: Handle status changes with audit logging via API
   const handleStatusChange = async (
@@ -367,6 +430,21 @@ export default function PriorityDashboard() {
     setSelectedObstacle(null);
   };
 
+  // NEW: Pagination handlers
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage((prev) => prev + 1);
+      window.scrollTo(0, 0); // Scroll to top
+    }
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage((prev) => prev - 1);
+      window.scrollTo(0, 0); // Scroll to top
+    }
+  };
+
   // Loading state
   if (loading) {
     console.log(`⏳ Dashboard loading...`);
@@ -411,56 +489,90 @@ export default function PriorityDashboard() {
   }
 
   console.log(
-    `🎨 Rendering dashboard UI with ${filteredObstacles.length} filtered obstacles`
+    `🎨 Rendering dashboard UI with ${paginatedObstacles.length} paginated obstacles`
   );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
             Obstacle Management
           </h1>
-          <p className="text-xl text-gray-600">
-            Intelligent obstacle lifecycle management with AHP prioritization
-          </p>
         </div>
 
-        {/* Stats Cards */}
-        <PriorityStatsCards stats={stats} />
-
-        {/* Filter Tabs */}
-        <PriorityFilterTabs
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
+        {/* Stats Cards - MODIFIED to pass new stats */}
+        <PriorityStatsBar
           stats={stats}
+          activeStatus={statusFilter}
+          onStatusChange={setStatusFilter}
         />
 
-        {/* Obstacles List */}
+        {/* Filter Tabs - KEPT as requested, for Priority */}
+        <div className="mt-4">
+          <h3 className="text-lg font-semibold text-gray-800 mb-3">
+            Filter by Priority
+          </h3>
+          <PriorityFilterTabs
+            activeFilter={priorityFilter}
+            onFilterChange={setPriorityFilter}
+            stats={stats}
+          />
+        </div>
+
+        {/* Obstacles List - UPDATED to use paginatedObstacles */}
         {filteredObstacles.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-12 text-center">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-12 text-center mt-8">
             <div className="text-6xl mb-4">📭</div>
             <div className="text-2xl font-bold text-gray-900 mb-2">
               No obstacles found
             </div>
             <div className="text-gray-600">
-              {activeFilter === "all"
+              {prioritizedObstacles.length === 0
                 ? "No obstacles have been reported yet."
-                : `No obstacles match the ${activeFilter} filter.`}
+                : `No obstacles match the current filters.`}
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {filteredObstacles.map((obstacle, index) => (
+          <div className="space-y-6 mt-8">
+            {paginatedObstacles.map((obstacle, index) => (
               <PriorityObstacleCard
                 key={obstacle.id}
                 obstacle={obstacle}
-                rank={index + 1}
+                rank={(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
                 onStatusChange={handleStatusChange}
                 onViewDetails={handleViewDetails}
               />
             ))}
+          </div>
+        )}
+
+        {/* NEW: Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm border border-gray-200">
+            <button
+              onClick={handlePreviousPage}
+              disabled={currentPage === 1}
+              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+              <span>Previous</span>
+            </button>
+
+            <span className="text-sm font-medium text-gray-700">
+              Page {currentPage} of {totalPages} ({filteredObstacles.length}{" "}
+              total items)
+            </span>
+
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>Next</span>
+              <ChevronRightIcon className="h-4 w-4" />
+            </button>
           </div>
         )}
       </div>
