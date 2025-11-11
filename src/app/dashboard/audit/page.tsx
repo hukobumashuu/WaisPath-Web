@@ -387,10 +387,17 @@ export default function AuditLogsPage() {
 
   useEffect(() => {
     if (user?.isAdmin && canViewAuditLogs) {
+      // This function depends on [filters, currentPage] via useCallback
       loadAuditLogs();
+    }
+  }, [user, canViewAuditLogs, loadAuditLogs]);
+
+  useEffect(() => {
+    if (user?.isAdmin && canViewAuditLogs) {
+      // This function depends on [statsTimeframe] via useCallback
       loadAuditStats();
     }
-  }, [user, canViewAuditLogs, loadAuditLogs, loadAuditStats]);
+  }, [user, canViewAuditLogs, loadAuditStats]);
 
   useEffect(() => {
     if (auditLogs.length > 0) {
